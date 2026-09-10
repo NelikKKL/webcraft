@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>net.minecraft.web</groupId>
+  <artifactId>alpha126-web</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <maven.compiler.source>11</maven.compiler.source>
+    <maven.compiler.target>11</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!--
+      Держим версию TeaVM в одном месте. Обновляйте вместе с teavm-maven-plugin
+      ниже. 0.10.x — актуальная линейка на момент написания; CI подскажет,
+      если версия протухла (артефакт не найдётся в Maven Central).
+    -->
+    <teavm.version>0.10.2</teavm.version>
+  </properties>
+
+  <dependencies>
+    <!-- Классы-заглушки для JDK API, которые TeaVM не реализует нативно,
+         но которые нужны для компиляции (javax.sound.*, java.awt частично).
+         TeaVM сам подставляет свои версии java.* классов при компиляции;
+         эта зависимость даёт JSBody-аннотации и служебные типы. -->
+    <dependency>
+      <groupId>org.teavm</groupId>
+      <artifactId>teavm-jso</artifactId>
+      <version>${teavm.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.teavm</groupId>
+      <artifactId>teavm-jso-apis</artifactId>
+      <version>${teavm.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.teavm</groupId>
+      <artifactId>teavm-classlib</artifactId>
+      <version>${teavm.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.teavm</groupId>
+      <artifactId>teavm-interop</artifactId>
+      <version>${teavm.version}</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>alpha126-web</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+      </plugin>
+
+      <plugin>
+        <groupId>org.teavm</groupId>
+        <artifactId>teavm-maven-plugin</artifactId>
+        <version>${teavm.version}</version>
+        <executions>
+          <execution>
+            <id>web-client</id>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <phase>process-classes</phase>
+            <configuration>
+              <!-- Точка входа: класс с public static void main(String[]) -->
+              <mainClass>net.minecraft.client.WebEntryPoint</mainClass>
+              <targetDirectory>${project.build.directory}/generated/js</targetDirectory>
+              <targetFileName>alpha126.js</targetFileName>
+              <sourceMapsGenerated>true</sourceMapsGenerated>
+              <debugInformationGenerated>true</debugInformationGenerated>
+              <!--
+                DEBUG на первых сборках, потом переключить на WHOLE_PROGRAM
+                для минификации/оптимизации, когда всё стабильно компилируется.
+              -->
+              <optimizationLevel>SIMPLE</optimizationLevel>
+              <obfuscated>false</obfuscated>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Копируем сгенерированный JS и статику (index.html, worker'ы) в один
+           выходной каталог, который потом заливается как артефакт/на GH Pages. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.3.1</version>
+        <executions>
+          <execution>
+            <id>copy-web-assets</id>
+            <phase>package</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/site</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${project.build.directory}/generated/js</directory>
+                </resource>
+                <resource>
+                  <directory>${project.basedir}/web</directory>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

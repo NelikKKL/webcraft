@@ -1,0 +1,50 @@
+name: Build web port (TeaVM)
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build with Maven (TeaVM compile)
+        run: mvn -B -e -DskipTests package
+
+      # Показываем ошибки компиляции TeaVM в логе явно, если сборка упала —
+      # чтобы не листать весь maven output вручную.
+      - name: Show TeaVM output on failure
+        if: failure()
+        run: |
+          echo "----- target/generated/js -----"
+          find target/generated -maxdepth 3 2>/dev/null || echo "(none)"
+          echo "----- last 200 lines of build log are above -----"
+
+      - name: Upload generated JS + web assets
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpha126-web-build
+          path: target/site
+          if-no-files-found: error
+
+      # Опционально: публикация на GitHub Pages при пуше в main.
+      # Раскомментируйте, когда сборка станет стабильной и появится
+      # смысл иметь живую ссылку на текущий прогресс.
+      # - name: Deploy to GitHub Pages
+      #   if: github.ref == 'refs/heads/main' && success()
+      #   uses: peaceiris/actions-gh-pages@v4
+      #   with:
+      #     github_token: ${{ secrets.GITHUB_TOKEN }}
+      #     publish_dir: target/site

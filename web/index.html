@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Minecraft Alpha 1.2.6 — web port (GL bridge smoke test)</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; overflow: hidden;
+    background: #111; color: #ddd;
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    height: 100%;
+  }
+  #glcanvas {
+    display: block;
+    width: 100vw; height: 100vh;
+    cursor: crosshair;
+  }
+  #overlay {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: 10px 14px;
+    background: rgba(0,0,0,0.55);
+    font-size: 13px;
+    line-height: 1.5;
+    pointer-events: none;
+  }
+  #status {
+    font-family: monospace;
+    color: #8f8;
+  }
+</style>
+</head>
+<body>
+  <canvas id="glcanvas"></canvas>
+  <div id="overlay">
+    <div><strong>GL bridge smoke test</strong> — Minecraft Alpha 1.2.6 web port, этап 1 (не настоящая игра)</div>
+    <div>Клик по канвасу — захват мыши (обзор камерой) · WASD — движение · Space/Shift — вверх/вниз · Esc — отпустить мышь</div>
+    <div id="status">инициализация…</div>
+  </div>
+
+  <script src="alpha126.js"></script>
+  <script>
+    // teavm-maven-plugin с targetFileName=alpha126.js генерирует ES-модуль
+    // с точкой входа main() — сам себя запускает при загрузке в браузерах,
+    // поддерживающих TeaVM runtime "browser" preset. Если сборка сконфигурит
+    // другой способ запуска (например main.js экспортирует функцию main()),
+    // здесь может понадобиться явный вызов — см. TODO.md при первом падении
+    // сборки/пустом экране в CI.
+  </script>
+</body>
+</html>
