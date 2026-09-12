@@ -55,10 +55,8 @@ public class BufferedImage {
         this.pixels = sharedPixels;
     }
 
-    @Override
     public int getWidth() { return width; }
 
-    @Override
     public int getHeight() { return height; }
 
     public int getType() { return type; }

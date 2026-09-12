@@ -290,7 +290,7 @@ final class GLBridge {
 
         if (s.scratchVbo == null) s.scratchVbo = s.gl.createBuffer();
         s.gl.bindBuffer(ARRAY_BUFFER, s.scratchVbo);
-        Float32Array data = Float32Array.copyFromJavaArray(interleaved);
+        Float32Array data = Float32ArrayFactory.wrap(interleaved);
         s.gl.bufferData(ARRAY_BUFFER, data, STREAM_DRAW);
         s.boundArrayBuffer = s.scratchVbo;
 
@@ -378,8 +378,8 @@ final class GLBridge {
         Shaders sh = s.shaders;
         s.gl.useProgram(sh.program);
 
-        Float32Array proj = Float32Array.copyFromJavaArray(s.projection);
-        Float32Array mv = Float32Array.copyFromJavaArray(s.modelview);
+        Float32Array proj = Float32ArrayFactory.wrap(s.projection);
+        Float32Array mv = Float32ArrayFactory.wrap(s.modelview);
         s.gl.uniformMatrix4fv(sh.uProjection, false, proj);
         s.gl.uniformMatrix4fv(sh.uModelview, false, mv);
 

@@ -104,9 +104,22 @@ public final class KeyboardBridge {
         installListeners(handler);
     }
 
+    /**
+     * org.lwjgl.input.Keyboard.enableRepeatEvents(boolean) — включает
+     * повторные KEY_DOWN события при удержании клавиши (нужно для
+     * зажатия Backspace в текстовых полях чата/ввода имени). DOM и так
+     * шлёт keydown с e.repeat=true при удержании — просто перестаём их
+     * фильтровать, когда включено. Флаг живёт на JS-стороне
+     * (window.__mcRepeatEnabled), чтобы не гонять его через отдельный
+     * Java<->JS вызов на каждое нажатие.
+     */
+    @JSBody(params = { "enabled" }, script = "window.__mcRepeatEnabled = enabled;")
+    public static native void setRepeatEventsEnabled(boolean enabled);
+
     @JSBody(params = { "handler" }, script =
+        "window.__mcRepeatEnabled = window.__mcRepeatEnabled || false;" +
         "window.addEventListener('keydown', function(e) {" +
-        "  if (e.repeat) return;" +
+        "  if (e.repeat && !window.__mcRepeatEnabled) return;" +
         "  handler.handle(e.code, true, e.key);" +
         "  var navKeys = ['Tab','Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];" +
         "  if (navKeys.indexOf(e.code) !== -1) e.preventDefault();" +

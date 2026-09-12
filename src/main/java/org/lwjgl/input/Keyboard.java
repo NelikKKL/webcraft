@@ -87,4 +87,8 @@ public final class Keyboard {
     public static String getKeyName(int key) {
         return KeyboardBridge.nameForScancode(key);
     }
+
+    public static void enableRepeatEvents(boolean enable) {
+        KeyboardBridge.setRepeatEventsEnabled(enable);
+    }
 }
