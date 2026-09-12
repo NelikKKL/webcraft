@@ -190,6 +190,7 @@ getResource-связанные), все обнаружены третьим CI-�
 | `Minecraft.java` (`c(String)`) | `System.exit(0);` | `this.H = false;` | `System.exit(int)` не поддерживается TeaVM |
 | `nl.java` (F3-экран) | Блок из 4 строк с `Runtime.getRuntime().maxMemory/totalMemory/freeMemory()` | Убран целиком | Не поддерживается TeaVM |
 | `ha.java` | `Thread.dumpStack();` | Убран (оставлен соседний `System.out.println`) | Не поддерживается TeaVM |
+| `pe.java` (x2) | `jq.e(this.a).stop();` / `jq.f(this.a).stop();` (внутри try/catch(Throwable)) | Убраны целиком | `Thread.stop()` не поддерживается TeaVM |
 
 ## Отложенные (НЕ патчатся в этой сессии, задокументировано в TODO.md)
 
