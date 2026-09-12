@@ -147,16 +147,31 @@ final class GLBridge {
      * может отличаться от того, что ожидает WebGL (WebGL2 texImage2D с
      * форматом RGBA/UNSIGNED_BYTE ожидает R,G,B,A по возрастанию адреса —
      * то же самое, что кладёт оригинальный Minecraft-код). Прямое побайтовое
+    /**
+     * ByteBuffer в decomp хранит пиксели как RGBA-байты, но порядок каналов
+     * может отличаться от того, что ожидает WebGL (WebGL2 texImage2D с
+     * форматом RGBA/UNSIGNED_BYTE ожидает R,G,B,A по возрастанию адреса —
+     * то же самое, что кладёт оригинальный Minecraft-код). Прямое побайтовое
      * копирование достаточно; endian-конвертации не нужны, т.к. это массив
      * байт, а не int[].
+     *
+     * Используем ПОДТВЕРЖДЁННЫЙ реальной ошибкой компиляции (первый прогон
+     * CI) метод ArrayBufferView.set(byte[], int) — компилятор перечислил
+     * его как существующую, но неподходящую по аргументам перегрузку для
+     * прежнего кода (arr.set(i, int) — которого не существует, есть только
+     * set(int, short) для одного элемента). Bulk-копирование byte[] через
+     * set(byte[], int) — безопасный, подтверждённый путь без поэлементных
+     * вызовов и без риска несовпадения типов.
      */
     static Uint8Array toUint8Array(ByteBuffer buffer, int expectedLength) {
         int pos = buffer.position();
         int len = Math.min(buffer.remaining(), expectedLength > 0 ? expectedLength : buffer.remaining());
-        Uint8Array arr = newUint8Array(len);
+        byte[] bytes = new byte[len];
         for (int i = 0; i < len; i++) {
-            arr.set(i, buffer.get(pos + i) & 0xFF);
+            bytes[i] = buffer.get(pos + i);
         }
+        Uint8Array arr = Uint8ArrayFactory.create(len);
+        arr.set(bytes, 0);
         return arr;
     }
 
@@ -275,7 +290,7 @@ final class GLBridge {
 
         if (s.scratchVbo == null) s.scratchVbo = s.gl.createBuffer();
         s.gl.bindBuffer(ARRAY_BUFFER, s.scratchVbo);
-        Float32Array data = Float32ArrayFactory.wrap(interleaved);
+        Float32Array data = Float32Array.copyFromJavaArray(interleaved);
         s.gl.bufferData(ARRAY_BUFFER, data, STREAM_DRAW);
         s.boundArrayBuffer = s.scratchVbo;
 
@@ -363,8 +378,8 @@ final class GLBridge {
         Shaders sh = s.shaders;
         s.gl.useProgram(sh.program);
 
-        Float32Array proj = Float32ArrayFactory.wrap(s.projection);
-        Float32Array mv = Float32ArrayFactory.wrap(s.modelview);
+        Float32Array proj = Float32Array.copyFromJavaArray(s.projection);
+        Float32Array mv = Float32Array.copyFromJavaArray(s.modelview);
         s.gl.uniformMatrix4fv(sh.uProjection, false, proj);
         s.gl.uniformMatrix4fv(sh.uModelview, false, mv);
 

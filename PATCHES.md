@@ -3,6 +3,26 @@
 Каждое изменение здесь — осознанное и обосновано ниже. Цель: минимальные,
 точечные, легко проверяемые правки — НЕ переписывание игровой логики.
 
+## Пакет `net.minecraft.client.awtshim` (НЕ `java.awt`/`javax.imageio`)
+
+Наши шимы `BufferedImage`/`Graphics`/`Color`/`WritableRaster`/`DataBuffer`/
+`DataBufferInt`/`ImageIO` живут в `net.minecraft.client.awtshim`, а НЕ в
+`java.awt`/`java.awt.image`/`javax.imageio`, где им было бы "естественно"
+находиться. Причина: JDK 9+ Java Platform Module System запрещает
+пользовательскому коду объявлять классы в пакетах, принадлежащих
+системным модулям (`java.desktop` включает весь `java.awt.*`/
+`javax.imageio.*`) — обычный `javac` (запускается ДО `teavm-maven-plugin`
+через `maven-compiler-plugin`) выдаёт "package exists in another module"
+и множество каскадных ошибок (подтверждено первым реальным прогоном CI —
+см. TODO.md).
+
+**Следствие для копирования decomp-дерева:** любой файл с
+`import java.awt.Color;` / `java.awt.Graphics;` /
+`java.awt.image.BufferedImage;` / `java.awt.image.DataBufferInt;` /
+`javax.imageio.ImageIO;` нужно патчить — заменять на
+`net.minecraft.client.awtshim.<ИмяКласса>`. Это ДОПОЛНИТЕЛЬНО к точечным
+патчам ниже (те меняют сами вызовы `getResource`, эти — import-строки).
+
 ## Полностью исключённые файлы (не копируются в web-port)
 
 Причина исключения указана для каждого — либо мёртвый/неигровой код, либо
@@ -45,13 +65,45 @@ no-op заглушкой с ИДЕНТИЧНЫМИ публичными сигн
 следующая сессия.
 
 ### `net/minecraft/client/oi.java` (мышь: grab/ungrab)
-Один патч: `this.c.getWidth()`/`getHeight()` (AWT `Component`, всегда `null`
+Патч: `this.c.getWidth()`/`getHeight()` (AWT `Component`, всегда `null`
 в веб-версии, т.к. `this.k` в Minecraft.java — AWT canvas — не используется)
 заменены на `Display.getWidth()`/`getHeight()` (наш `org.lwjgl.opengl.Display`,
 всегда актуален и корректен, т.к. отражает реальный размер `<canvas>`).
 Без этого патча `oi.b()` (вызывается при открытии паузы) кидал бы NPE —
 это НЕ мёртвый код, реальный игровой путь. Поле `Component c` и
-конструктор — убраны, т.к. становятся не нужны после патча.
+конструктор с параметром — убраны (конструктор стал `oi()` без параметров,
+вызывающий код в Minecraft.java пропатчен: `new oi(this.k)` → `new oi()`).
+Также убрано поле `Cursor d` и его инициализация (кастомная форма курсора
+ОС через `org.lwjgl.input.Cursor`, которого нет в web-порте) — Pointer
+Lock браузера и так скрывает курсор в grabbed-режиме.
+
+### `net/minecraft/client/Minecraft.java` — удалён AWT desktop-лаунчер
+Методы `a(String,String)`, `a(String,String,String)` (создают
+`java.awt.Frame`/`Canvas`, инстанцируют `StandaloneClient` в отдельном
+`Thread`) и `main(String[])` (реальная точка входа desktop JAR, звала
+`a(String,String)`) — удалены целиком. Это мёртвый код для веб-версии
+(реальная точка входа — `WebEntryPoint.main()`/будущий `WebMinecraft`),
+и он ссылался на исключённые типы `StandaloneClient`/`gn` — оставлять
+значило бы либо восстанавливать эти классы, либо ловить ошибку компиляции.
+Также убраны теперь-неиспользуемые импорты `BorderLayout`/`Dimension`/
+`Frame`; `Canvas`/`Component`/`Graphics` остались (используются в других,
+реально достижимых местах класса) и перенесены на `awtshim`-версии.
+
+### `net/minecraft/client/bp.java` (GuiScreen — базовый класс экранов)
+Один метод, `public static String c()` (чтение системного буфера обмена
+через `java.awt.Toolkit`/`datatransfer` — для Ctrl+V в текстовых полях),
+заменён на `return null;`. Остальной класс (обработка мыши/клавиатуры,
+рендер фона меню) не тронут. Реальный `navigator.clipboard.readText()`
+браузера асинхронный — не вписывается в эту синхронную сигнатуру без
+переработки вызывающего кода; отложено, см. TODO.md.
+
+### `net/minecraft/client/em.java` (скриншоты)
+Весь класс заменён заглушкой, возвращающей строку "не поддерживается" —
+избегает `org.lwjgl.BufferUtils` (не реализован, используется только
+здесь и в исключённом paulscode) и `ImageIO.write`/`java.io.File`-based
+сохранения (в браузере нет прямого доступа к файловой системе — нужен
+Blob+download, не реализовано). Сигнатура метода (`String a(File,int,int)`)
+сохранена, чтобы вызывающий код не менялся.
 
 ## Точечные патчи (замена одной строки в существующем файле)
 

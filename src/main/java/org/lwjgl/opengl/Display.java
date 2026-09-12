@@ -31,7 +31,7 @@ public final class Display {
 
     // --- API, повторяющее сигнатуры реального LWJGL Display ---
 
-    public static void setParent(java.awt.Canvas parentCanvas) {
+    public static void setParent(net.minecraft.client.awtshim.Canvas parentCanvas) {
         // В десктопной версии это встраивание в AWT-канвас апплета.
         // В веб-версии canvas уже находится в DOM статически (index.html) —
         // здесь ничего дополнительно встраивать не нужно, метод существует

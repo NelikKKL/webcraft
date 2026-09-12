@@ -9,7 +9,7 @@ package net.minecraft.client.web;
  * реализации, чем shader permutations, и достаточно для fixed-function
  * уровня сложности этой версии игры.
  */
-final class Shaders {
+public final class Shaders {
 
     // WebGL2 = GLSL ES 3.00
     private static final String VERTEX_SRC =
@@ -82,17 +82,17 @@ final class Shaders {
         "  outColor = color;\n" +
         "}\n";
 
-    final WebGLProgram program;
+    public final WebGLProgram program;
 
     // GLSL uniform location cache
-    final WebGLUniformLocation uProjection;
-    final WebGLUniformLocation uModelview;
-    final WebGLUniformLocation uTexture;
-    final WebGLUniformLocation uUseTexture;
-    final WebGLUniformLocation uUseLighting;
-    final WebGLUniformLocation uLightDir0, uLightDir1, uLightColor0, uLightColor1, uAmbient;
-    final WebGLUniformLocation uUseFog, uFogMode, uFogDensity, uFogStart, uFogEnd, uFogColor;
-    final WebGLUniformLocation uColorMult;
+    public final WebGLUniformLocation uProjection;
+    public final WebGLUniformLocation uModelview;
+    public final WebGLUniformLocation uTexture;
+    public final WebGLUniformLocation uUseTexture;
+    public final WebGLUniformLocation uUseLighting;
+    public final WebGLUniformLocation uLightDir0, uLightDir1, uLightColor0, uLightColor1, uAmbient;
+    public final WebGLUniformLocation uUseFog, uFogMode, uFogDensity, uFogStart, uFogEnd, uFogColor;
+    public final WebGLUniformLocation uColorMult;
 
     Shaders(WebGL2 gl) {
         WebGLShader vs = compile(gl, 35633 /*VERTEX_SHADER*/, VERTEX_SRC);
