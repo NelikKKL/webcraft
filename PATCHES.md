@@ -39,10 +39,12 @@ CI-прогона: "Class java.net.Socket was not found" — TeaVM classlib не
 `ConnectException` — семантически корректное поведение (браузер не может
 открыть сырой TCP), не временная заглушка для обхода компиляции.
 
-**Важно:** `InetAddress`/`SocketAddress`/`SocketException`/
-`UnknownHostException`/`URL`/`MalformedURLException` НЕ патчились —
-не были в списке ошибок сборки, то есть, судя по всему, уже поддерживаются
-TeaVM classlib как есть.
+**Важно:** `SocketAddress`/`SocketException`/`UnknownHostException`/`URL`/
+`MalformedURLException` НЕ патчились — не были в списке ошибок сборки
+(хотя `InetAddress` изначально ошибочно предполагался поддерживаемым по
+той же логике и оказался НЕ поддерживаемым — см. TODO.md, "четвёртый
+прогон": отсутствие в одном батче ошибок не гарантирует поддержку,
+только последующий прогон даёт полную уверенность).
 
 ## Полностью исключённые файлы (не копируются в web-port)
 
