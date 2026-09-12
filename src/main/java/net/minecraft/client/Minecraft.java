@@ -49,7 +49,13 @@ implements Runnable {
     public bp p = null;
     public hu q = new hu(this);
     public kb r = new kb(this);
-    private ResourcesDownloader Q;
+    // ПАТЧЕНО для web-порта: ResourcesDownloader.java исключён из сборки
+    // (см. PATCHES.md) — скачивание доп. звуковых ресурсов по HTTP из S3;
+    // ссылка была нерабочей уже в оригинальной desktop-игре (см. комментарий
+    // в исходнике), плюс использует java.net.URL/java.io.File/XML-парсинг/
+    // реальные Thread — ничего из этого не поддерживается TeaVM. Поле
+    // `Q` и все его использования (конструктор/start/cleanup/reload)
+    // убраны ниже по файлу.
     private int R = 0;
     private int S = 0;
     private int T;
@@ -183,8 +189,7 @@ implements Runnable {
         GL11.glViewport(0, 0, (int)this.c, (int)this.d);
         this.h = new bz(this.e, this.n);
         try {
-            this.Q = new ResourcesDownloader(this.D, this);
-            this.Q.start();
+            // ПАТЧЕНО для web-порта: ResourcesDownloader убран, см. поле Q выше.
         }
         catch (Exception exception) {
             // empty catch block
@@ -334,6 +339,14 @@ implements Runnable {
         }
     }
 
+    /**
+     * ПАТЧЕНО для web-порта: `System.exit(int)` не поддерживается TeaVM
+     * (нет процесса ОС для завершения в браузере — подтверждено реальной
+     * ошибкой сборки: "Method java.lang.System.exit(I)V was not found").
+     * Вместо жёсткого завершения процесса — останавливаем игровой цикл
+     * тем же способом, что и обычный graceful stop (см. isRunning()/
+     * runOneFrame() в этом файле), залогировав ошибку в консоль.
+     */
     private void c(String string) {
         int n2 = GL11.glGetError();
         if (n2 != 0) {
@@ -341,7 +354,7 @@ implements Runnable {
             System.out.println("########## GL ERROR ##########");
             System.out.println("@ " + string);
             System.out.println(n2 + ": " + string2);
-            System.exit(0);
+            this.H = false;
         }
     }
 
@@ -353,9 +366,7 @@ implements Runnable {
             this.z.c();
         }
         try {
-            if (this.Q != null) {
-                this.Q.b();
-            }
+            // ПАТЧЕНО для web-порта: ResourcesDownloader убран, см. поле Q выше.
         }
         catch (Exception exception) {
             // empty catch block
@@ -934,7 +945,7 @@ implements Runnable {
         System.out.println("FORCING RELOAD!");
         this.A = new qg();
         this.A.a(this.y);
-        this.Q.a();
+        // ПАТЧЕНО для web-порта: ResourcesDownloader убран, см. поле Q выше.
     }
 
     public boolean j() {

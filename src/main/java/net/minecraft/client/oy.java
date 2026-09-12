@@ -2,7 +2,7 @@
  * Decompiled with CFR 0.152.
  */
 package net.minecraft.client;
-import java.net.ConnectException;
+import net.minecraft.client.netshim.ConnectException;
 import java.net.UnknownHostException;
 import net.minecraft.client.Minecraft;
 

@@ -335,7 +335,11 @@ public class ha {
         int n4 = TrigLookup.b(lw2.ay / 16.0);
         if (n3 != this.j || n4 != this.k) {
             System.out.println("Wrong location! " + lw2);
-            Thread.dumpStack();
+            // ПАТЧЕНО для web-порта: Thread.dumpStack() не поддерживается
+            // TeaVM ("Method java.lang.Thread.dumpStack()V was not found").
+            // Чисто диагностический вывод (печать текущего стека при
+            // обнаружении рассинхронизации позиции) — сообщение выше уже
+            // предупреждает о проблеме, сам дамп стека не критичен.
         }
         if ((n2 = TrigLookup.b(lw2.ax / 16.0)) < 0) {
             n2 = 0;

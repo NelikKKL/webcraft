@@ -142,14 +142,12 @@ extends nb {
             ls2.a(this.g.m(), 2, 12, 0xFFFFFF);
             ls2.a(this.g.n(), 2, 22, 0xFFFFFF);
             ls2.a(this.g.o(), 2, 32, 0xFFFFFF);
-            long l2 = Runtime.getRuntime().maxMemory();
-            long l3 = Runtime.getRuntime().totalMemory();
-            long l4 = Runtime.getRuntime().freeMemory();
-            long l5 = l3 - l4;
-            string = "Used memory: " + l5 * 100L / l2 + "% (" + l5 / 1024L / 1024L + "MB) of " + l2 / 1024L / 1024L + "MB";
-            this.b(ls2, string, n7 - ls2.a(string) - 2, 2, 0xE0E0E0);
-            string = "Allocated memory: " + l3 * 100L / l2 + "% (" + l3 / 1024L / 1024L + "MB)";
-            this.b(ls2, string, n7 - ls2.a(string) - 2, 12, 0xE0E0E0);
+            // ПАТЧЕНО для web-порта: Runtime.getRuntime().maxMemory/
+            // totalMemory/freeMemory не поддерживаются TeaVM ("Method
+            // java.lang.Runtime.maxMemory()J was not found") — у JS-кучи
+            // нет прямого аналога этих понятий. Блок отображения памяти в
+            // F3-экране убран, остальная отладочная информация (позиция
+            // и т.д.) не тронута.
             this.b(ls2, "x: " + this.g.g.aw, 2, 64, 0xE0E0E0);
             this.b(ls2, "y: " + this.g.g.ax, 2, 72, 0xE0E0E0);
             this.b(ls2, "z: " + this.g.g.ay, 2, 80, 0xE0E0E0);

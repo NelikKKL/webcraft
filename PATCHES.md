@@ -23,6 +23,27 @@
 `net.minecraft.client.awtshim.<ИмяКласса>`. Это ДОПОЛНИТЕЛЬНО к точечным
 патчам ниже (те меняют сами вызовы `getResource`, эти — import-строки).
 
+## Пакет `net.minecraft.client.netshim` (НЕ `java.net`)
+
+Та же причина, что и у `awtshim` выше: `java.net` — тоже часть системного
+модуля `java.base` (присутствует ВСЕГДА, в отличие от `java.desktop`,
+который хотя бы теоретически можно исключить) — писать свои классы прямо
+в пакет `java.net` нельзя (подтверждено реальной ошибкой сборки третьего
+CI-прогона: "Class java.net.Socket was not found" — TeaVM classlib не
+включает `Socket`/`ConnectException`).
+
+Наши `Socket`/`ConnectException` живут в `net.minecraft.client.netshim`.
+Патчены импорты в `oy.java`, `jq.java`, `ib.java` (`import java.net.Socket;`
+→ `import net.minecraft.client.netshim.Socket;`, аналогично для
+`ConnectException`). `Socket`-конструктор **всегда** бросает
+`ConnectException` — семантически корректное поведение (браузер не может
+открыть сырой TCP), не временная заглушка для обхода компиляции.
+
+**Важно:** `InetAddress`/`SocketAddress`/`SocketException`/
+`UnknownHostException`/`URL`/`MalformedURLException` НЕ патчились —
+не были в списке ошибок сборки, то есть, судя по всему, уже поддерживаются
+TeaVM classlib как есть.
+
 ## Полностью исключённые файлы (не копируются в web-port)
 
 Причина исключения указана для каждого — либо мёртвый/неигровой код, либо
@@ -45,6 +66,7 @@
 | `net/minecraft/client/mz.java` | То же — `Session`-подкласс для isom-инструмента, нигде не инстанцируется |
 | `net/minecraft/client/fj.java` | `extends paulscode.sound.codecs.CodecJOrbis` — стриминг музыки по URL, звуковая функциональность |
 | `net/minecraft/client/in.java` | Используется только `fj.java` (см. выше) — XOR-деobfuscation поток для стриминга |
+| `net/minecraft/client/ResourcesDownloader.java` | Скачивание доп. звуковых ресурсов по HTTP из S3 — ссылка нерабочая уже в оригинальной desktop-игре (комментарий в исходнике: "This link is broken"); использует java.net.URL+java.io.File+XML-парсинг+реальные Thread — TeaVM не поддерживает `javax.xml.parsers.DocumentBuilderFactory` (подтверждено ошибкой сборки). 4 точки использования в Minecraft.java (поле `Q`, конструктор+start, cleanup, force-reload) пропатчены на no-op. |
 | `com/jcraft/jogg/**`, `com/jcraft/jorbis/**` | Ogg Vorbis декодер — часть звуковой подсистемы, отложено (Этап 4, TODO.md) |
 | `paulscode/**` | Звуковой движок (потоки, OpenAL, MIDI) — отложено (Этап 4, TODO.md) |
 
@@ -157,6 +179,15 @@ README.md — почему не полагаемся на `java.lang.Class.getRe
 | `nk.java` | `ImageIO.read(nk.class.getResource("/terrain.png"))` | `ImageIO.read("/terrain.png")` |
 | `d.java` | `return d.class.getResourceAsStream(string);` | `return net.minecraft.client.web.ResourceIO.getImageResourceAsStream(string);` |
 | `ls.java` | `ImageIO.read(fu.class.getResourceAsStream(string))` | `ImageIO.read(string)` (напрямую, т.к. `string` = `/font/default.png`, всегда картиночный путь) |
+
+Отдельная группа патчей — TeaVM-специфичные "метод не найден" (не
+getResource-связанные), все обнаружены третьим CI-прогоном:
+
+| Файл | Было | Стало | Причина |
+|---|---|---|---|
+| `Minecraft.java` (`c(String)`) | `System.exit(0);` | `this.H = false;` | `System.exit(int)` не поддерживается TeaVM |
+| `nl.java` (F3-экран) | Блок из 4 строк с `Runtime.getRuntime().maxMemory/totalMemory/freeMemory()` | Убран целиком | Не поддерживается TeaVM |
+| `ha.java` | `Thread.dumpStack();` | Убран (оставлен соседний `System.out.println`) | Не поддерживается TeaVM |
 
 ## Отложенные (НЕ патчатся в этой сессии, задокументировано в TODO.md)
 
