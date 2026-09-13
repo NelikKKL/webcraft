@@ -1,16 +1,18 @@
 package net.minecraft.client;
 
 import net.minecraft.client.web.ResourcePreloader;
-import net.minecraft.client.web.ResourceManifest;
 import org.teavm.jso.JSBody;
 import org.teavm.jso.JSFunctor;
 import org.teavm.jso.JSObject;
 
 /**
  * Реальная точка входа веб-порта. Последовательность запуска:
- *  1. ResourcePreloader.preloadAll(...) — асинхронно грузит все 44
- *     картиночных ресурса (fetch + decode браузером), см.
- *     ResourceManifest/ResourceCache/javax.imageio.ImageIO-шим.
+ *  1. ResourcePreloader.preloadAll(...) — асинхронно скачивает
+ *     web/assets.zip (все игровые текстуры одним архивом), распаковывает
+ *     через JSZip и декодирует каждую картинку в браузере — см.
+ *     ResourcePreloader/ResourceCache/javax.imageio.ImageIO-шим.
+ *     Прогресс отображается на экране загрузки (см. index.html,
+ *     window.__setLoadingProgress).
  *  2. По завершении прелоадки — создаём WebMinecraft (наш аналог
  *     i.java/StandaloneClient.java, см. PATCHES.md) и вызываем init()
  *     (разовая инициализация — Display.create(), загрузка текстур,
@@ -20,44 +22,53 @@ import org.teavm.jso.JSObject;
  *     оригинальный блокирующий run()-with-while был разбит на
  *     init()+runOneFrame()).
  *
- * Предыдущая версия этого файла (смоук-тест GL-моста — вращающиеся кубы,
- * текстурированный пол) была временной, использовалась для проверки
- * GL11/Display/Keyboard/Mouse ДО того, как реальное decomp-дерево было
- * скопировано в проект — сохранена в истории git на случай регрессий.
+ * Любая ошибка на любом из этапов ведёт на экран краша (см.
+ * window.__showCrashScreen в index.html) с полным стектрейсом и кнопкой
+ * копирования — вместо тихого зависания на экране загрузки.
  */
 public final class WebEntryPoint {
 
     private static WebMinecraft minecraft;
 
     public static void main(String[] args) {
-        logStatus("Preloading resources…");
-        ResourcePreloader.preloadAll(ResourceManifest.IMAGE_PATHS, WebEntryPoint::startGame);
+        ResourcePreloader.preloadAll(WebEntryPoint::startGame);
     }
 
     private static void startGame() {
-        logStatus("Starting game…");
         try {
             // 854x480 — то же разрешение по умолчанию, что и в оригинальном
             // desktop-лаунчере (см. исключённый StandaloneClient.java);
             // fullscreen=false — обычный canvas фиксированного размера.
             minecraft = new WebMinecraft(854, 480, false);
             minecraft.init();
-        } catch (Exception e) {
-            e.printStackTrace();
-            logStatus("Failed to start: " + e);
+        } catch (Throwable t) {
+            showCrash("Failed to start game", t);
             return;
         }
-        logStatus(""); // очищаем статус-оверлей — игра сама рисует свой UI
+        hideLoadingScreen();
         requestFrame(WebEntryPoint::frame);
     }
 
     private static void frame(double timestampMs) {
-        minecraft.runOneFrame();
+        try {
+            minecraft.runOneFrame();
+        } catch (Throwable t) {
+            showCrash("Unexpected error in game loop", t);
+            return;
+        }
         if (minecraft.isRunning()) {
             requestFrame(WebEntryPoint::frame);
-        } else {
-            logStatus("Game stopped.");
         }
+    }
+
+    private static void showCrash(String title, Throwable t) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(title).append(": ").append(t).append('\n');
+        for (StackTraceElement el : t.getStackTrace()) {
+            sb.append("    at ").append(el).append('\n');
+        }
+        t.printStackTrace();
+        showCrashScreen(sb.toString());
     }
 
     // --- JS interop ---
@@ -70,7 +81,9 @@ public final class WebEntryPoint {
     @JSBody(params = { "cb" }, script = "window.requestAnimationFrame(function(t) { cb.run(t); });")
     private static native void requestFrame(FrameCallback cb);
 
-    @JSBody(params = { "msg" }, script =
-        "console.log(msg); var el = document.getElementById('status'); if (el) el.textContent = msg;")
-    private static native void logStatus(String msg);
+    @JSBody(params = {}, script = "if (window.__hideLoadingScreen) window.__hideLoadingScreen();")
+    private static native void hideLoadingScreen();
+
+    @JSBody(params = { "text" }, script = "if (window.__showCrashScreen) window.__showCrashScreen(text);")
+    private static native void showCrashScreen(String text);
 }

@@ -1,5 +1,60 @@
 # TODO — план следующих этапов
 
+## UI: экран загрузки/краша + упаковка ассетов в zip (по запросу пользователя)
+
+Не связано с исправлением ошибок сборки — это фичи, добавленные по прямому
+запросу после того, как первая сборка прошла успешно:
+
+1. **Все 44 ассета упакованы в один `web/assets.zip`** (297 КБ) вместо
+   44 отдельных HTTP-запросов — распаковывается прямо в браузере через
+   [JSZip](https://stuk.github.io/jszip/) (подключается через `<script>`
+   с cdnjs в `index.html`, автозагрузка — ничего вручную ставить не нужно).
+   `ResourceManifest.java` удалён (был нужен только для явного списка
+   путей при поштучной загрузке) — теперь `ResourcePreloader` просто
+   перебирает `zip.forEach(...)` и обрабатывает все файлы, какие найдёт.
+   Полный список путей (для справки/пересборки архива) сохранён в
+   PATCHES.md.
+2. **Экран загрузки** — `background.png` (16×16 тайл, замощен через CSS
+   `background-repeat`+`image-rendering: pixelated`, как в оригинальной
+   игре), прогресс-бар (0–80% скачивание архива по Content-Length,
+   80–100% распаковка/декодирование картинок), статус-текст. Убран
+   старый текст про WASD/управление (был актуален только для
+   давно замененного smoke-теста).
+3. **Экран краша** — тот же тайловый фон + белая панель с полным текстом
+   ошибки (message+stacktrace) в `<textarea readonly>` и кнопкой "Copy
+   log" (`navigator.clipboard.writeText`, с фолбэком на
+   `document.execCommand('copy')` для старых браузеров). Показывается
+   при: (а) реальном крахе игры через `WebMinecraft.a(hr)`, (б) любой
+   ошибке при `WebMinecraft` конструкторе/`init()`/`runOneFrame()` (были
+   голым `try/catch` без внятного вывода — теперь всё видно), (в) фатальной
+   ошибке загрузки assets.zip, (г) ЛЮБОЙ необработанной JS-ошибке на
+   странице (`window.onerror`/`unhandledrejection`) — чтобы вместо тихого
+   зависания на экране загрузки пользователь ВСЕГДА видел, что пошло не
+   так, и мог скопировать лог для отчёта о проблеме.
+
+**Не проверено сборкой/в браузере** (как обычно в этой среде — нет ни
+компилятора, ни браузера для реального клика). JS-логика (fetch с
+потоковым чтением прогресса, JSZip API) сверена с официальной
+документацией JSZip построчно, но сам факт "собирается и работает
+целиком" может показать только реальный прогон.
+
+**Справочный список путей**, ранее бывших в `ResourceManifest.IMAGE_PATHS`
+(на случай пересборки `assets.zip` из свежей копии decomp-ресурсов):
+`/art/kz.png`, `/environment/clouds.png`, `/font/default.png`,
+`/gui/background.png`, `/gui/container.png`, `/gui/crafting.png`,
+`/gui/furnace.png`, `/gui/gui.png`, `/gui/icons.png`, `/gui/inventory.png`,
+`/gui/items.png`, `/gui/logo.png`, `/gui/unknown_pack.png`,
+`/item/arrows.png`, `/item/boat.png`, `/item/cart.png`, `/item/sign.png`,
+`/misc/dial.png`, `/misc/foliagecolor.png`, `/misc/grasscolor.png`,
+`/misc/water.png`, `/mob/char.png`, `/mob/chicken.png`, `/mob/cow.png`,
+`/mob/creeper.png`, `/mob/ghast.png`, `/mob/ghast_fire.png`,
+`/mob/pig.png`, `/mob/pigzombie.png`, `/mob/saddle.png`,
+`/mob/sheep.png`, `/mob/sheep_fur.png`, `/mob/skeleton.png`,
+`/mob/slime.png`, `/mob/spider.png`, `/mob/spider_eyes.png`,
+`/mob/zombie.png`, `/pack.png`, `/particles.png`, `/terrain.png`,
+`/terrain/moon.png`, `/terrain/sun.png`, `/title/black.png`,
+`/title/mojang.png`.
+
 ## РЕЗУЛЬТАТЫ ПЯТОГО РЕАЛЬНОГО ПРОГОНА CI (исправлено)
 
 Одна ошибка, два места: **`Thread.stop()` не поддерживается TeaVM**
