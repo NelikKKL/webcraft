@@ -151,8 +151,8 @@
     </div>
   </div>
 
-  <!-- JSZip — распаковка assets.zip прямо в браузере (см. ResourcePreloader.java) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <!-- akrile — собственный формат архива вместо zip/JSZip (см. TODO.md).
+       ES-модуль: инициализация и вызов window.main() ниже, после alpha126.js. -->
 
   <script>
     (function () {
@@ -224,5 +224,39 @@
   </script>
 
   <script src="alpha126.js"></script>
+  <script type="module">
+    // ВАЖНО: alpha126.js — UMD-модуль. В браузерном контексте (нет AMD/
+    // CommonJS) он делает `self.main = <точка входа>` — то есть просто
+    // ПРИСВАИВАЕТ функцию глобальному window.main, но НЕ вызывает её сама.
+    // Без этого явного вызова игра никогда не стартует — весь остальной
+    // код (прелоадер, экран загрузки и т.д.) просто никогда не выполнится,
+    // при этом БЕЗ единой ошибки в консоли (что маскирует проблему —
+    // выглядит как тихое зависание на "Loading...", а не как явный сбой).
+    // Обнаружено и подтверждено вручную в headless-браузере.
+    //
+    // akrile — собственная библиотека распаковки архивов (замена JSZip,
+    // см. TODO.md/PATCHES.md) — ES-модуль с WASM-ядром, поэтому этот блок
+    // сам по себе тоже <script type="module"> (обычный <script> не может
+    // делать top-level import). window.main() вызывается ТОЛЬКО после
+    // готовности WASM — ResourcePreloader (внутри main()) обращается к
+    // window.Akrile синхронно и должен видеть его уже полностью готовым.
+    import Akrile from './akrile.js';
+
+    Akrile.ready
+      .then(() => {
+        window.Akrile = Akrile;
+        try {
+          window.main();
+        } catch (e) {
+          window.__showCrashScreen('Failed to start: ' + (e && e.stack ? e.stack : String(e)));
+        }
+      })
+      .catch((e) => {
+        window.__showCrashScreen(
+          'Failed to initialize akrile (WASM archive library):\n' +
+          (e && e.stack ? e.stack : String(e))
+        );
+      });
+  </script>
 </body>
 </html>

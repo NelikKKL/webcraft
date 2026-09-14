@@ -17,12 +17,15 @@ import org.teavm.jso.typedarrays.Uint8Array;
  * читают из ResourceCache синхронно — ровно так, как ожидает decomp-код,
  * без единой правки в игровой логике.
  *
- * Все ресурсы упакованы в один web/assets.zip (вместо 44 отдельных
- * HTTP-запросов — один запрос, что заметно быстрее, особенно на
- * мобильной сети) и распаковываются прямо в браузере через JSZip
- * (подключается через <script> с CDN в index.html — см. PATCHES.md).
- * PNG внутри архива декодируется браузером (через createImageBitmap), а
- * не Java-кодом — писать свой PNG-декодер не нужно и не имеет смысла.
+ * Все ресурсы упакованы в один web/assets.akrile — собственный архивный
+ * формат (см. PATCHES.md, "akrile — замена JSZip") вместо стандартного
+ * .zip: WASM-библиотека `akrile` (ES-модуль, инициализируется и
+ * прокидывается в window.Akrile из index.html ДО вызова window.main() —
+ * см. index.html) с API, намеренно похожим на JSZip (loadAsync/forEach/
+ * file.async), поэтому вся структура кода ниже почти не отличается от
+ * версии с настоящим JSZip. PNG внутри архива декодируется браузером
+ * (через createImageBitmap), а не Java-кодом — писать свой PNG-декодер
+ * не нужно и не имеет смысла.
  *
  * Прогресс загрузки (0.0–1.0) прокидывается напрямую в DOM через
  * window.__setLoadingProgress (см. index.html) — 0–80% на скачивание
@@ -49,23 +52,24 @@ public final class ResourcePreloader {
     }
 
     /**
-     * Скачивает web/assets.zip, распаковывает через JSZip, декодирует
-     * каждый PNG и кладёт результат в ResourceCache. onComplete
-     * вызывается один раз, когда все файлы обработаны (отдельные ошибки
-     * декодирования отдельных файлов логируются и пропускаются — не
-     * блокируют остальные, как и раньше).
+     * Скачивает web/assets.akrile, распаковывает через window.Akrile
+     * (см. index.html — инициализируется до вызова main(), т.е. до
+     * попадания сюда), декодирует каждый PNG и кладёт результат в
+     * ResourceCache. onComplete вызывается один раз, когда все файлы
+     * обработаны (отдельные ошибки декодирования отдельных файлов
+     * логируются и пропускаются — не блокируют остальные).
      */
     public static void preloadAll(OnComplete onComplete) {
         ResourceReadyCallback onResource = ResourceCache::put;
         JsCallback onDone = onComplete::done;
-        preloadZipNative(onResource, onDone);
+        preloadArchiveNative(onResource, onDone);
     }
 
     @JSBody(params = { "onResource", "onDone" }, script =
         "function setProgress(f, text) { if (window.__setLoadingProgress) window.__setLoadingProgress(f, text); }" +
         "setProgress(0, 'Downloading assets\u2026');" +
-        "fetch('assets.zip').then(function(resp) {" +
-        "  if (!resp.ok) { throw new Error('HTTP ' + resp.status + ' fetching assets.zip'); }" +
+        "fetch('assets.akrile').then(function(resp) {" +
+        "  if (!resp.ok) { throw new Error('HTTP ' + resp.status + ' fetching assets.akrile'); }" +
         "  var total = parseInt(resp.headers.get('Content-Length') || '0', 10);" +
         "  if (!resp.body || !total) {" +
         // Нет доступа к потоковому чтению или сервер не прислал
@@ -91,10 +95,13 @@ public final class ResourcePreloader {
         "  return pump();" +
         "}).then(function(arrayBuffer) {" +
         "  setProgress(0.8, 'Unpacking assets\u2026');" +
-        "  return JSZip.loadAsync(arrayBuffer);" +
+        "  return window.Akrile.loadAsync(arrayBuffer);" +
         "}).then(function(zip) {" +
         "  var entries = [];" +
-        "  zip.forEach(function(relPath, entry) { if (!entry.dir) entries.push(entry); });" +
+        // У AkrileFile нет свойства .dir (в отличие от JSZip) — папки в
+        // архиве отличаются только именем, оканчивающимся на "/" (см.
+        // zip-to-akrile.js: archive.folder(name) для директорий).
+        "  zip.forEach(function(name, entry) { if (!name.endsWith('/')) entries.push(entry); });" +
         "  var total = entries.length;" +
         "  var done = 0;" +
         "  function next() {" +
@@ -120,10 +127,10 @@ public final class ResourcePreloader {
         "  }" +
         "  next();" +
         "}).catch(function(err) {" +
-        "  console.error('Fatal: failed to load assets.zip', err);" +
+        "  console.error('Fatal: failed to load assets.akrile', err);" +
         "  if (window.__showCrashScreen) {" +
         "    window.__showCrashScreen('Failed to load game assets:\\n' + (err && err.stack ? err.stack : String(err)));" +
         "  }" +
         "});")
-    private static native void preloadZipNative(ResourceReadyCallback onResource, JsCallback onDone);
+    private static native void preloadArchiveNative(ResourceReadyCallback onResource, JsCallback onDone);
 }
