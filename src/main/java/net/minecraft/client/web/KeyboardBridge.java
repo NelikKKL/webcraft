@@ -120,12 +120,12 @@ public final class KeyboardBridge {
         "window.__mcRepeatEnabled = window.__mcRepeatEnabled || false;" +
         "window.addEventListener('keydown', function(e) {" +
         "  if (e.repeat && !window.__mcRepeatEnabled) return;" +
-        "  handler.handle(e.code, true, e.key);" +
+        "  handler(e.code, true, e.key);" +
         "  var navKeys = ['Tab','Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];" +
         "  if (navKeys.indexOf(e.code) !== -1) e.preventDefault();" +
         "}, false);" +
         "window.addEventListener('keyup', function(e) {" +
-        "  handler.handle(e.code, false, e.key);" +
+        "  handler(e.code, false, e.key);" +
         "}, false);")
     private static native void installListeners(DomKeyHandler handler);
 }

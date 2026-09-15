@@ -78,7 +78,7 @@ public final class WebEntryPoint {
         void run(double timestampMs);
     }
 
-    @JSBody(params = { "cb" }, script = "window.requestAnimationFrame(function(t) { cb.run(t); });")
+    @JSBody(params = { "cb" }, script = "window.requestAnimationFrame(function(t) { cb(t); });")
     private static native void requestFrame(FrameCallback cb);
 
     @JSBody(params = {}, script = "if (window.__hideLoadingScreen) window.__hideLoadingScreen();")

@@ -30,6 +30,31 @@ TODO.md):** `alpha126.js` (UMD-модуль от TeaVM) в браузере то
 `<script type="module">`, который сначала дожидается готовности `Akrile`
 (WASM) и кладёт её в `window.Akrile`, и только потом стартует игру.
 
+## `@JSFunctor`-callback'и вызывались неправильно (`.methodName()` вместо `()`)
+
+Найдено тем же способом (реальный тест в headless Chromium) в следующей
+сессии после интеграции akrile. `@JSFunctor` в TeaVM превращает
+Java-интерфейс в обычную JS-функцию — вызывать нужно `callback(...)`,
+а не `callback.methodName(...)`. Было неправильно во ВСЕХ 4 местах, где
+использовался этот паттерн:
+
+| Файл | Было | Стало |
+|---|---|---|
+| `KeyboardBridge.java` (x2) | `handler.handle(...)` | `handler(...)` |
+| `MouseBridge.java` (x4) | `handler.handle(...)` | `handler(...)` |
+| `ResourcePreloader.java` | `onDone.call()` | `onDone()` |
+| `ResourcePreloader.java` | `onResource.onResource(...)` | `onResource(...)` |
+| `WebEntryPoint.java` | `cb.run(t)` (в requestAnimationFrame) | `cb(t)` |
+
+`onDone.call()` случайно "работал" (у любой JS-функции есть встроенный
+`Function.prototype.call()`, и вызов без аргументов эквивалентен прямому
+вызову) — остальные 8 мест реально бросали `TypeError` при первом же
+использовании. Последствия до фикса: ни одна текстура не грузилась в
+`ResourceCache` (крах при старте), игровой цикл не мог сделать больше
+одного кадра (requestAnimationFrame callback падал на первом же вызове),
+ввод с клавиатуры/мыши не работал вообще. См. TODO.md за полным разбором
+и подтверждением через прямой патч скомпилированного JS.
+
 ## Пакет `net.minecraft.client.awtshim` (НЕ `java.awt`/`javax.imageio`)
 
 Наши шимы `BufferedImage`/`Graphics`/`Color`/`WritableRaster`/`DataBuffer`/

@@ -105,7 +105,7 @@ public final class ResourcePreloader {
         "  var total = entries.length;" +
         "  var done = 0;" +
         "  function next() {" +
-        "    if (done >= total) { setProgress(1, 'Starting\u2026'); onDone.call(); return; }" +
+        "    if (done >= total) { setProgress(1, 'Starting\u2026'); onDone(); return; }" +
         "    var entry = entries[done];" +
         "    entry.async('blob').then(function(blob) {" +
         "      return createImageBitmap(blob);" +
@@ -116,7 +116,7 @@ public final class ResourcePreloader {
         "      var ctx = canvas.getContext('2d');" +
         "      ctx.drawImage(bitmap, 0, 0);" +
         "      var imgData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);" +
-        "      onResource.onResource('/' + entry.name, bitmap.width, bitmap.height, new Uint8Array(imgData.data.buffer));" +
+        "      onResource('/' + entry.name, bitmap.width, bitmap.height, new Uint8Array(imgData.data.buffer));" +
         "    }).catch(function(err) {" +
         "      console.warn('Resource decode failed (skipped):', entry.name, err);" +
         "    }).then(function() {" +

@@ -59,19 +59,19 @@ public final class MouseBridge {
         "  var y = flipY(e.clientY - rect.top);" +
         "  var dx = e.movementX || 0;" +
         "  var dy = -(e.movementY || 0);" +
-        "  handler.handle(0, x|0, y|0, dx|0, dy|0, -1, 0);" +
+        "  handler(0, x|0, y|0, dx|0, dy|0, -1, 0);" +
         "}, false);" +
         "canvas.addEventListener('mousedown', function(e) {" +
         "  canvas.focus();" +
-        "  handler.handle(1, 0, 0, 0, 0, e.button, 0);" +
+        "  handler(1, 0, 0, 0, 0, e.button, 0);" +
         "  e.preventDefault();" +
         "}, false);" +
         "window.addEventListener('mouseup', function(e) {" +
-        "  handler.handle(2, 0, 0, 0, 0, e.button, 0);" +
+        "  handler(2, 0, 0, 0, 0, e.button, 0);" +
         "}, false);" +
         "canvas.addEventListener('wheel', function(e) {" +
         "  var w = e.deltaY < 0 ? 120 : -120;" +
-        "  handler.handle(3, 0, 0, 0, 0, -1, w);" +
+        "  handler(3, 0, 0, 0, 0, -1, w);" +
         "  e.preventDefault();" +
         "}, { passive: false });" +
         "canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); }, false);" +
