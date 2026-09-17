@@ -26,7 +26,7 @@ extends bp {
     public dj() {
         try {
             ArrayList<String> arrayList = new ArrayList<String>();
-            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(dj.class.getResourceAsStream("/title/splashes.txt")));
+            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(net.minecraft.client.web.ResourceIO.getTextResourceAsStream("/title/splashes.txt")));
             String string = "";
             while ((string = bufferedReader.readLine()) != null) {
                 if ((string = string.trim()).length() <= 0) continue;
@@ -57,8 +57,10 @@ extends bp {
 
     @Override
     public void a() {
+        System.out.println("[DIAG] dj.a() (StartMenuScreen.initGui) — ENTER");
         Calendar calendar = Calendar.getInstance();
         calendar.setTime(new Date());
+        System.out.println("[DIAG] dj.a() — Calendar OK");
         if (calendar.get(2) + 1 == 11 && calendar.get(5) == 9) {
             this.l = "Happy birthday, ez!";
         } else if (calendar.get(2) + 1 == 6 && calendar.get(5) == 1) {
@@ -72,9 +74,11 @@ extends bp {
         this.e.add(new gh(2, this.c / 2 - 100, this.d / 4 + 72, "Multiplayer"));
         this.e.add(new gh(3, this.c / 2 - 100, this.d / 4 + 96, "Mods and Texture Packs"));
         this.e.add(new gh(0, this.c / 2 - 100, this.d / 4 + 120 + 12, "Options..."));
+        System.out.println("[DIAG] dj.a() — buttons added, count=" + this.e.size() + " screenSize=" + this.c + "x" + this.d);
         if (this.b.i == null) {
             ((gh)this.e.get(1)).g = false;
         }
+        System.out.println("[DIAG] dj.a() — EXIT OK");
     }
 
     @Override

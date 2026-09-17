@@ -3,6 +3,22 @@
 Каждое изменение здесь — осознанное и обосновано ниже. Цель: минимальные,
 точечные, легко проверяемые правки — НЕ переписывание игровой логики.
 
+## ВРЕМЕННАЯ ДИАГНОСТИКА (убрать после использования!)
+
+Добавлена для разбора "не видно кнопок в меню" (см. TODO.md за полным
+разбором методологии). `[DIAG]`-префикс во всех строках — легко найти
+через grep. Затрагивает:
+- `bp.java`: `a(Minecraft,int,int)` — логирует before/after количество
+  кнопок, оборачивает `this.a()` в try/catch с выводом стектрейса;
+  `a(int,int,float)` (рендер) — логирует каждые 60 кадров количество
+  кнопок и координаты мыши, оборачивает рендер каждой кнопки в try/catch.
+- `dj.java`: `a()` — пошаговое логирование (ENTER/Calendar OK/кнопки
+  добавлены/EXIT OK).
+
+**После получения диагностического лога и постановки диагноза — убрать
+все блоки с `[DIAG]` и связанные try/catch (вернуть оригинальную
+decomp-логику один в один, без диагностической обвязки).**
+
 ## Веб-обвязка: экран загрузки/краша, упаковка ассетов (не decomp-патч)
 
 Не изменение decomp-кода, а обвязка вокруг него — упомянуто здесь ради
@@ -245,6 +261,7 @@ README.md — почему не полагаемся на `java.lang.Class.getRe
 | `nk.java` | `ImageIO.read(nk.class.getResource("/terrain.png"))` | `ImageIO.read("/terrain.png")` |
 | `d.java` | `return d.class.getResourceAsStream(string);` | `return net.minecraft.client.web.ResourceIO.getImageResourceAsStream(string);` |
 | `ls.java` | `ImageIO.read(fu.class.getResourceAsStream(string))` | `ImageIO.read(string)` (напрямую, т.к. `string` = `/font/default.png`, всегда картиночный путь) |
+| `dj.java` | `new InputStreamReader(dj.class.getResourceAsStream("/title/splashes.txt"))` | `new InputStreamReader(ResourceIO.getTextResourceAsStream("/title/splashes.txt"))` — **пропущен в исходном сканировании**, найден только реальной отладкой (см. TODO.md); потребовал НОВОГО метода `ResourceIO.getTextResourceAsStream` (настоящий `ByteArrayInputStream`, не просто ImageIO-маркер) + поддержки `.txt`-файлов в `ResourcePreloader`/`ResourceCache` |
 
 Отдельная группа патчей — TeaVM-специфичные "метод не найден" (не
 getResource-связанные), все обнаружены третьим CI-прогоном:
@@ -265,8 +282,3 @@ getResource-связанные), все обнаружены третьим CI-�
 - `mq.java` — `ImageIO.read(httpURLConnection.getInputStream())` — загрузка
   скинов по сети (Mojang API) — требует CORS-совместимого прокси или
   альтернативного источника, не решается на уровне ImageIO-моста.
-- `/title/splashes.txt` (`dj.java`) — текстовый ресурс, наш
-  ResourcePreloader сейчас прелоадит только картинки. Патч: заменить
-  реальную загрузку на небольшой хардкоженный массив строк-заглушек
-  (см. TODO.md) — низкий приоритет, чисто косметическая фича (случайная
-  фраза под логотипом на титульном экране).

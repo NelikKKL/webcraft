@@ -30,6 +30,7 @@ public final class ResourceCache {
     }
 
     private static final Map<String, Entry> cache = new HashMap<>();
+    private static final Map<String, String> textCache = new HashMap<>();
 
     /**
      * Вызывается из ResourcePreloader (через JS) один раз на каждый успешно
@@ -50,9 +51,19 @@ public final class ResourceCache {
         cache.put(normalize(path), new Entry(width, height, argb));
     }
 
+    /** Аналог put(...) для текстовых ресурсов (см. ResourceIO.getTextResourceAsStream) — например, /title/splashes.txt. */
+    static void putText(String path, String content) {
+        textCache.put(normalize(path), content);
+    }
+
     /** Возвращает запись по пути ресурса (тот же формат, что передаётся в getResource/getResourceAsStream) либо null, если ресурс не был прелоаднут/не найден. */
     public static Entry get(String path) {
         return cache.get(normalize(path));
+    }
+
+    /** Текстовое содержимое ресурса (см. putText) либо null, если не был прелоаднут/не найден. */
+    public static String getText(String path) {
+        return textCache.get(normalize(path));
     }
 
     public static boolean has(String path) {

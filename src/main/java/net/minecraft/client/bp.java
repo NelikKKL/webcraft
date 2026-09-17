@@ -24,10 +24,22 @@ extends nb {
     protected ls g;
     private gh a = null;
 
+    // ВРЕМЕННАЯ ДИАГНОСТИКА для web-порта — см. TODO.md. Убрать после диагностики.
+    private static int diagFrameCounter = 0;
+
     public void a(int n2, int n3, float f2) {
+        if (diagFrameCounter++ % 60 == 0) {
+            System.out.println("[DIAG] bp.a(int,int,float) render: screen=" + this.getClass().getName()
+                + " buttonCount=" + this.e.size() + " mouseX=" + n2 + " mouseY=" + n3);
+        }
         for (int i2 = 0; i2 < this.e.size(); ++i2) {
             gh gh2 = (gh)this.e.get(i2);
-            gh2.a(this.b, n2, n3);
+            try {
+                gh2.a(this.b, n2, n3);
+            } catch (Throwable t) {
+                System.out.println("[DIAG] EXCEPTION rendering button #" + i2 + ": " + t);
+                t.printStackTrace();
+            }
         }
     }
 
@@ -80,7 +92,16 @@ extends nb {
         this.c = n2;
         this.d = n3;
         this.e.clear();
-        this.a();
+        // ВРЕМЕННАЯ ДИАГНОСТИКА для web-порта — см. TODO.md, "Открытый
+        // вопрос: не видно кнопок". Убрать после диагностики.
+        System.out.println("[DIAG] bp.a(Minecraft,int,int): screen=" + this.getClass().getName() + " before-initGui buttons=" + this.e.size());
+        try {
+            this.a();
+        } catch (Throwable t) {
+            System.out.println("[DIAG] EXCEPTION in initGui() for " + this.getClass().getName() + ": " + t);
+            t.printStackTrace();
+        }
+        System.out.println("[DIAG] bp.a(Minecraft,int,int): screen=" + this.getClass().getName() + " after-initGui buttons=" + this.e.size());
     }
 
     public void a() {

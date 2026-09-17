@@ -10,12 +10,13 @@ import org.teavm.jso.typedarrays.Uint8Array;
  * через ImageIO.read(getResourceAsStream(path)) в произвольный момент
  * (конструкторы мобов, TextureManager и т.д.) — в браузере эквивалент
  * (fetch) асинхронный. Решение: до старта игрового цикла (до вызова
- * настоящего Minecraft-кода) прогружаем ВСЕ известные PNG-ресурсы разом
+ * настоящего Minecraft-кода) прогружаем ВСЕ известные ресурсы разом
  * через fetch()+decode на JS-стороне, складываем результат в Java-side
- * ResourceCache (см. ResourceCache.java) как уже готовые RGBA-байты.
+ * ResourceCache (см. ResourceCache.java) как уже готовые данные.
  * После этого java.awt.image.BufferedImage / javax.imageio.ImageIO шимы
+ * (для картинок) и ResourceIO.getTextResourceAsStream (для текста)
  * читают из ResourceCache синхронно — ровно так, как ожидает decomp-код,
- * без единой правки в игровой логике.
+ * без единой правки в игровой логике загрузки.
  *
  * Все ресурсы упакованы в один web/assets.akrile — собственный архивный
  * формат (см. PATCHES.md, "akrile — замена JSZip") вместо стандартного
@@ -25,12 +26,13 @@ import org.teavm.jso.typedarrays.Uint8Array;
  * file.async), поэтому вся структура кода ниже почти не отличается от
  * версии с настоящим JSZip. PNG внутри архива декодируется браузером
  * (через createImageBitmap), а не Java-кодом — писать свой PNG-декодер
- * не нужно и не имеет смысла.
+ * не нужно и не имеет смысла. Текстовые файлы (.txt) декодируются через
+ * TextDecoder (см. akrile.js convertOut) — например, /title/splashes.txt.
  *
  * Прогресс загрузки (0.0–1.0) прокидывается напрямую в DOM через
  * window.__setLoadingProgress (см. index.html) — 0–80% на скачивание
  * архива (по Content-Length, если сервер его отдаёт), 80–100% на
- * распаковку и декодирование картинок.
+ * распаковку и декодирование картинок/текста.
  */
 public final class ResourcePreloader {
 
@@ -51,21 +53,28 @@ public final class ResourcePreloader {
         void onResource(String path, int width, int height, Uint8Array rgba);
     }
 
+    @JSFunctor
+    interface TextResourceReadyCallback extends JSObject {
+        /** Java получает путь + текстовое содержимое одного .txt-файла. */
+        void onText(String path, String content);
+    }
+
     /**
      * Скачивает web/assets.akrile, распаковывает через window.Akrile
      * (см. index.html — инициализируется до вызова main(), т.е. до
-     * попадания сюда), декодирует каждый PNG и кладёт результат в
-     * ResourceCache. onComplete вызывается один раз, когда все файлы
-     * обработаны (отдельные ошибки декодирования отдельных файлов
-     * логируются и пропускаются — не блокируют остальные).
+     * попадания сюда), декодирует каждый файл (PNG как картинку, .txt как
+     * текст) и кладёт результат в ResourceCache. onComplete вызывается
+     * один раз, когда все файлы обработаны (отдельные ошибки декодирования
+     * отдельных файлов логируются и пропускаются — не блокируют остальные).
      */
     public static void preloadAll(OnComplete onComplete) {
         ResourceReadyCallback onResource = ResourceCache::put;
+        TextResourceReadyCallback onText = ResourceCache::putText;
         JsCallback onDone = onComplete::done;
-        preloadArchiveNative(onResource, onDone);
+        preloadArchiveNative(onResource, onText, onDone);
     }
 
-    @JSBody(params = { "onResource", "onDone" }, script =
+    @JSBody(params = { "onResource", "onText", "onDone" }, script =
         "function setProgress(f, text) { if (window.__setLoadingProgress) window.__setLoadingProgress(f, text); }" +
         "setProgress(0, 'Downloading assets\u2026');" +
         "fetch('assets.akrile').then(function(resp) {" +
@@ -107,17 +116,21 @@ public final class ResourcePreloader {
         "  function next() {" +
         "    if (done >= total) { setProgress(1, 'Starting\u2026'); onDone(); return; }" +
         "    var entry = entries[done];" +
-        "    entry.async('blob').then(function(blob) {" +
-        "      return createImageBitmap(blob);" +
-        "    }).then(function(bitmap) {" +
-        "      var canvas = document.createElement('canvas');" +
-        "      canvas.width = bitmap.width;" +
-        "      canvas.height = bitmap.height;" +
-        "      var ctx = canvas.getContext('2d');" +
-        "      ctx.drawImage(bitmap, 0, 0);" +
-        "      var imgData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);" +
-        "      onResource('/' + entry.name, bitmap.width, bitmap.height, new Uint8Array(imgData.data.buffer));" +
-        "    }).catch(function(err) {" +
+        "    var isText = entry.name.toLowerCase().endsWith('.txt');" +
+        "    var step = isText" +
+        "      ? entry.async('text').then(function(text) { onText('/' + entry.name, text); })" +
+        "      : entry.async('blob').then(function(blob) {" +
+        "          return createImageBitmap(blob);" +
+        "        }).then(function(bitmap) {" +
+        "          var canvas = document.createElement('canvas');" +
+        "          canvas.width = bitmap.width;" +
+        "          canvas.height = bitmap.height;" +
+        "          var ctx = canvas.getContext('2d');" +
+        "          ctx.drawImage(bitmap, 0, 0);" +
+        "          var imgData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);" +
+        "          onResource('/' + entry.name, bitmap.width, bitmap.height, new Uint8Array(imgData.data.buffer));" +
+        "        });" +
+        "    step.catch(function(err) {" +
         "      console.warn('Resource decode failed (skipped):', entry.name, err);" +
         "    }).then(function() {" +
         "      done++;" +
@@ -132,5 +145,5 @@ public final class ResourcePreloader {
         "    window.__showCrashScreen('Failed to load game assets:\\n' + (err && err.stack ? err.stack : String(err)));" +
         "  }" +
         "});")
-    private static native void preloadArchiveNative(ResourceReadyCallback onResource, JsCallback onDone);
+    private static native void preloadArchiveNative(ResourceReadyCallback onResource, TextResourceReadyCallback onText, JsCallback onDone);
 }

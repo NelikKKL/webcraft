@@ -41,6 +41,29 @@ public final class ResourceIO {
     }
 
     /**
+     * Для текстовых ресурсов (например, /title/splashes.txt), которые
+     * вызывающий код читает побайтово через InputStreamReader/BufferedReader
+     * — в отличие от картинок, здесь НУЖНО настоящее байтовое чтение, а не
+     * просто маркер для ImageIO. Текст уже полностью прелоаднут (см.
+     * ResourcePreloader — декодирован через TextDecoder на JS-стороне) и
+     * лежит в ResourceCache как готовая Java String — здесь просто
+     * заворачиваем её UTF-8 байты в обычный ByteArrayInputStream, который
+     * поддерживает реальное чтение.
+     *
+     * Если ресурс не был прелоаднут (опечатка в пути / файл отсутствует),
+     * возвращает null — ровно как ведёт себя Class.getResourceAsStream на
+     * несуществующем пути в реальной JVM (вызывающий код уже оборачивает
+     * такие случаи в try/catch, см. PATCHES.md).
+     */
+    public static InputStream getTextResourceAsStream(String path) {
+        String text = ResourceCache.getText(path);
+        if (text == null) {
+            return null;
+        }
+        return new java.io.ByteArrayInputStream(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /**
      * Маркерный InputStream для картинок — реальных байтов не содержит
      * (в этом нет нужды, см. javadoc класса), только путь для последующего
      * поиска в ResourceCache внутри ImageIO.read(InputStream).
