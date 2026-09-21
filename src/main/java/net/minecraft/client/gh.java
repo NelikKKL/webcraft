@@ -47,6 +47,11 @@ extends nb {
             return;
         }
         ls ls2 = minecraft.o;
+        // GUI widgets are a separate 2D pass. Do not inherit depth/texture
+        // state from the panorama or from a previous display-list draw.
+        GL11.glDisable(2929); // GL_DEPTH_TEST
+        GL11.glDepthMask(false);
+        GL11.glEnable(3553);  // GL_TEXTURE_2D
         GL11.glBindTexture(3553, (int)minecraft.n.a("/gui/gui.png"));
         GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
         boolean bl2 = n2 >= this.c && n3 >= this.d && n2 < this.c + this.a && n3 < this.d + this.b;
@@ -61,6 +66,7 @@ extends nb {
         } else {
             this.a(ls2, this.e, this.c + this.a / 2, this.d + (this.b - 8) / 2, 0xE0E0E0);
         }
+        GL11.glDepthMask(true);
     }
 
     protected void b(Minecraft minecraft, int n2, int n3) {

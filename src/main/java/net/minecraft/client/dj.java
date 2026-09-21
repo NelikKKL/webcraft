@@ -117,11 +117,22 @@ extends bp {
         String string = "Copyright Mojang Specifications. Do not distribute.";
         this.b(this.g, string, this.c - this.g.a(string) - 2, this.d - 10, 0xFFFFFF);
 
-        // Web-port fix: the 3D panorama leaves GL_DEPTH_TEST enabled.
-        // GUI elements are rendered at z=0, so stale depth values can reject
-        // the button quads/text. Disable depth testing for the 2D GUI pass.
+        // Web-port GUI pass: explicitly restore the fixed-function 2D state.
+        // The panorama temporarily changes both matrix stacks and depth state;
+        // relying on implicit state restoration is fragile in the WebGL shim.
+        GL11.glMatrixMode(5889); // GL_PROJECTION
+        GL11.glLoadIdentity();
+        GL11.glOrtho(0.0, (double)this.c, (double)this.d, 0.0, 1000.0, 3000.0);
+        GL11.glMatrixMode(5888); // GL_MODELVIEW
+        GL11.glLoadIdentity();
+        GL11.glTranslatef(0.0f, 0.0f, -2000.0f);
+        GL11.glViewport(0, 0, (int)this.b.c, (int)this.b.d);
         GL11.glDisable(2929); // GL_DEPTH_TEST
+        GL11.glDepthMask(false);
+        GL11.glEnable(3553);  // GL_TEXTURE_2D
+        GL11.glDisable(3042); // GL_BLEND
         super.a(n2, n3, f2);
+        GL11.glDepthMask(true);
         GL11.glEnable(2929);  // restore state for the next 3D render pass
     }
 

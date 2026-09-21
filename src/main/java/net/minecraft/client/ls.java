@@ -119,43 +119,83 @@ public class ls {
             n4 = (n4 & 0xFCFCFC) >> 2;
             n4 += n5;
         }
+
+        // Web-port fix: the original implementation stores glyph geometry in
+        // OpenGL display lists. Our WebGL client-array shim cannot safely keep
+        // the client-side vertex pointer state inside a display list, so the
+        // recorded draw can execute later with no active position/UV array.
+        // Render glyph quads directly instead. This preserves the original
+        // glyph atlas, spacing, color codes and matrix semantics.
+        GL11.glEnable(3553);
         GL11.glBindTexture(3553, (int)this.a);
-        float f2 = (float)(n4 >> 16 & 0xFF) / 255.0f;
-        float f3 = (float)(n4 >> 8 & 0xFF) / 255.0f;
-        float f4 = (float)(n4 & 0xFF) / 255.0f;
-        float f5 = (float)(n4 >> 24 & 0xFF) / 255.0f;
-        if (f5 == 0.0f) {
-            f5 = 1.0f;
-        }
-        GL11.glColor4f((float)f2, (float)f3, (float)f4, (float)f5);
-        this.d.clear();
+        GL11.glColor4f(
+            (float)(n4 >> 16 & 0xFF) / 255.0f,
+            (float)(n4 >> 8 & 0xFF) / 255.0f,
+            (float)(n4 & 0xFF) / 255.0f,
+            ((float)(n4 >> 24 & 0xFF) / 255.0f) == 0.0f ? 1.0f : (float)(n4 >> 24 & 0xFF) / 255.0f
+        );
+
+        is is2 = is.a;
         GL11.glPushMatrix();
         GL11.glTranslatef((float)n2, (float)n3, 0.0f);
+
         for (int i2 = 0; i2 < string.length(); ++i2) {
-            while (string.charAt(i2) == '\u00a7' && string.length() > i2 + 1) {
-                int n6 = "0123456789abcdef".indexOf(string.toLowerCase().charAt(i2 + 1));
-                if (n6 < 0 || n6 > 15) {
-                    n6 = 15;
+            char ch = string.charAt(i2);
+
+            if (ch == '\u00a7' && string.length() > i2 + 1) {
+                int code = "0123456789abcdef".indexOf(Character.toLowerCase(string.charAt(i2 + 1)));
+                if (code < 0 || code > 15) {
+                    code = 15;
                 }
-                this.d.put(this.c + 256 + n6 + (bl2 ? 16 : 0));
-                if (this.d.remaining() == 0) {
-                    this.d.flip();
-                    GL11.glCallLists((IntBuffer)this.d);
-                    this.d.clear();
+
+                int r = (code >> 2 & 1) * 170;
+                int g = (code >> 1 & 1) * 170;
+                int b = (code & 1) * 170;
+                int extra = (code >> 3 & 1) * 85;
+                r += extra;
+                g += extra;
+                b += extra;
+                if (code == 6) {
+                    r += 85;
                 }
-                i2 += 2;
+                if (bl2) {
+                    int gray = (r * 30 + g * 59 + b * 11) / 100;
+                    r = (gray * 30 + g * 70) / 100;
+                    b = (gray * 30 + b * 70) / 100;
+                    g = gray;
+                }
+                if (code >= 16) {
+                    r /= 4;
+                    g /= 4;
+                    b /= 4;
+                }
+                GL11.glColor3f(r / 255.0f, g / 255.0f, b / 255.0f);
+                ++i2;
+                continue;
             }
-            int n7 = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_'abcdefghijklmnopqrstuvwxyz{|}~\u2302\u00c7\u00fc\u00e9\u00e2\u00e4\u00e0\u00e5\u00e7\u00ea\u00eb\u00e8\u00ef\u00ee\u00ec\u00c4\u00c5\u00c9\u00e6\u00c6\u00f4\u00f6\u00f2\u00fb\u00f9\u00ff\u00d6\u00dc\u00f8\u00a3\u00d8\u00d7\u0192\u00e1\u00ed\u00f3\u00fa\u00f1\u00d1\u00aa\u00ba\u00bf\u00ae\u00ac\u00bd\u00bc\u00a1\u00ab\u00bb".indexOf(string.charAt(i2));
-            if (n7 >= 0) {
-                this.d.put(this.c + n7 + 32);
+
+            int glyph = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_'abcdefghijklmnopqrstuvwxyz{|}~\u2302\u00c7\u00fc\u00e9\u00e2\u00e4\u00e0\u00e5\u00e7\u00ea\u00eb\u00e8\u00ef\u00ee\u00ec\u00c4\u00c5\u00c9\u00e6\u00c6\u00f4\u00f6\u00f2\u00fb\u00f9\u00ff\u00d6\u00dc\u00f8\u00a3\u00d8\u00d7\u0192\u00e1\u00ed\u00f3\u00fa\u00f1\u00d1\u00aa\u00ba\u00bf\u00ae\u00ac\u00bd\u00bc\u00a1\u00ab\u00bb".indexOf(ch);
+            if (glyph < 0) {
+                continue;
             }
-            if (this.d.remaining() != 0) continue;
-            this.d.flip();
-            GL11.glCallLists((IntBuffer)this.d);
-            this.d.clear();
+
+            int glyphId = glyph + 32;
+            int tx = glyphId % 16 * 8;
+            int ty = glyphId / 16 * 8;
+            float f2 = 7.99f;
+            float u0 = (float)tx / 128.0f;
+            float v0 = (float)ty / 128.0f;
+            float u1 = ((float)tx + f2) / 128.0f;
+            float v1 = ((float)ty + f2) / 128.0f;
+
+            is2.b();
+            is2.a(0.0, f2, 0.0, u0, v1);
+            is2.a(f2, f2, 0.0, u1, v1);
+            is2.a(f2, 0.0, 0.0, u1, v0);
+            is2.a(0.0, 0.0, 0.0, u0, v0);
+            is2.a();
+            GL11.glTranslatef((float)this.b[glyphId], 0.0f, 0.0f);
         }
-        this.d.flip();
-        GL11.glCallLists((IntBuffer)this.d);
         GL11.glPopMatrix();
     }
 
