@@ -45,6 +45,17 @@ jobs:
 
           tree = ET.parse(src)
           root = tree.getroot()
+          # Use TeaVM 0.11.0 for the CI-only Wasm build. The repository
+          # currently uses 0.10.2, whose Maven plugin does not expose the
+          # copy-webassembly-gc-runtime goal.
+          for plugin in root.find(f"{ns}build/{ns}plugins").findall(f"{ns}plugin"):
+              aid = plugin.find(f"{ns}artifactId")
+              if aid is not None and aid.text == "teavm-maven-plugin":
+                  ver = plugin.find(f"{ns}version")
+                  if ver is None:
+                      ver = ET.SubElement(plugin, f"{ns}version")
+                  ver.text = "0.11.0"
+                  break
 
           plugins = root.find(f"{ns}build/{ns}plugins")
           if plugins is None:
@@ -78,7 +89,7 @@ jobs:
           ET.SubElement(cfg, f"{ns}optimizationLevel").text = "FULL"
           ET.SubElement(cfg, f"{ns}sourceMapsGenerated").text = "true"
           ET.SubElement(cfg, f"{ns}debugInformationGenerated").text = "true"
-          ET.SubElement(cfg, f"{ns}obfuscated").text = "false"
+          ET.SubElement(cfg, f"{ns}minifying").text = "false"
 
           # TeaVM does not copy the Wasm GC runtime as part of compile; add
           # the dedicated runtime-copy goal required by the browser loader.
