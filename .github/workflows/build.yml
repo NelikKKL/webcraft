@@ -1,4 +1,4 @@
-name: Build web port (TeaVM)
+name: Build web port (JS + WebAssembly GC)
 
 on:
   push:
@@ -19,32 +19,112 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: Build with Maven (TeaVM compile)
+      # Normal project build: keeps the existing JS build/output unchanged.
+      - name: Build JavaScript client
         run: mvn -B -e -DskipTests package
 
-      # Показываем ошибки компиляции TeaVM в логе явно, если сборка упала —
-      # чтобы не листать весь maven output вручную.
-      - name: Show TeaVM output on failure
-        if: failure()
+      - name: Verify JavaScript output
         run: |
-          echo "----- target/generated/js -----"
-          find target/generated -maxdepth 3 2>/dev/null || echo "(none)"
-          echo "----- last 200 lines of build log are above -----"
+          test -s target/generated/js/alpha126.js
+          test -f target/site/index.html
+          echo "JS client:"
+          ls -lh target/generated/js/alpha126.js
 
-      - name: Upload generated JS + web assets
-        if: success()
+      # The current pom has a single TeaVM execution configured for JS.
+      # Create a temporary POM for CI only, adding a second TeaVM execution
+      # for WebAssembly GC. The repository pom.xml is not changed/committed.
+      - name: Create temporary Wasm build POM
+        shell: python
+        run: |
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          src = Path("pom.xml")
+          dst = Path("pom-wasm-ci.xml")
+          ns = "{http://maven.apache.org/POM/4.0.0}"
+
+          tree = ET.parse(src)
+          root = tree.getroot()
+
+          plugins = root.find(f"{ns}build/{ns}plugins")
+          if plugins is None:
+              raise SystemExit("Could not find build/plugins in pom.xml")
+
+          teavm = None
+          for plugin in plugins.findall(f"{ns}plugin"):
+              aid = plugin.find(f"{ns}artifactId")
+              if aid is not None and aid.text == "teavm-maven-plugin":
+                  teavm = plugin
+                  break
+
+          if teavm is None:
+              raise SystemExit("Could not find teavm-maven-plugin in pom.xml")
+
+          executions = teavm.find(f"{ns}executions")
+          if executions is None:
+              executions = ET.SubElement(teavm, f"{ns}executions")
+
+          execution = ET.SubElement(executions, f"{ns}execution")
+          ET.SubElement(execution, f"{ns}id").text = "wasm-client-ci"
+          goals = ET.SubElement(execution, f"{ns}goals")
+          ET.SubElement(goals, f"{ns}goal").text = "compile"
+          ET.SubElement(execution, f"{ns}phase").text = "process-classes"
+
+          cfg = ET.SubElement(execution, f"{ns}configuration")
+          ET.SubElement(cfg, f"{ns}mainClass").text = "net.minecraft.client.WebEntryPoint"
+          ET.SubElement(cfg, f"{ns}targetDirectory").text = "${project.build.directory}/generated/wasm"
+          ET.SubElement(cfg, f"{ns}targetFileName").text = "alpha126.wasm"
+          ET.SubElement(cfg, f"{ns}targetType").text = "WEBASSEMBLY_GC"
+          ET.SubElement(cfg, f"{ns}optimizationLevel").text = "FULL"
+          ET.SubElement(cfg, f"{ns}sourceMapsGenerated").text = "true"
+          ET.SubElement(cfg, f"{ns}debugInformationGenerated").text = "true"
+          ET.SubElement(cfg, f"{ns}obfuscated").text = "false"
+
+          # TeaVM does not copy the Wasm GC runtime as part of compile; add
+          # the dedicated runtime-copy goal required by the browser loader.
+          runtime = ET.SubElement(executions, f"{ns}execution")
+          ET.SubElement(runtime, f"{ns}id").text = "wasm-runtime-ci"
+          rgoals = ET.SubElement(runtime, f"{ns}goals")
+          ET.SubElement(rgoals, f"{ns}goal").text = "copy-webassembly-gc-runtime"
+          ET.SubElement(runtime, f"{ns}phase").text = "process-classes"
+          rcfg = ET.SubElement(runtime, f"{ns}configuration")
+          ET.SubElement(rcfg, f"{ns}targetDirectory").text = "${project.build.directory}/generated/wasm"
+
+          ET.register_namespace("", "http://maven.apache.org/POM/4.0.0")
+          tree.write(dst, encoding="UTF-8", xml_declaration=True)
+          print(f"Created {dst}")
+
+      - name: Build WebAssembly GC client
+        run: mvn -B -e -f pom-wasm-ci.xml -DskipTests process-classes
+
+      - name: Verify WebAssembly output
+        run: |
+          test -s target/generated/wasm/alpha126.wasm
+          test -s target/generated/wasm/alpha126.wasm-runtime.js
+          echo "Wasm client:"
+          ls -lh target/generated/wasm/alpha126.wasm target/generated/wasm/alpha126.wasm-runtime.js
+
+      - name: Add Wasm client to web artifact
+        run: |
+          mkdir -p target/site/wasm
+          cp target/generated/wasm/alpha126.wasm target/site/wasm/
+          cp target/generated/wasm/alpha126.wasm-runtime.js target/site/wasm/
+          find target/generated/wasm -maxdepth 1 -type f -name '*.teadbg' -exec cp {} target/site/wasm/ \;
+
+      - name: Upload JS + Wasm web build
         uses: actions/upload-artifact@v4
         with:
           name: alpha126-web-build
           path: target/site
           if-no-files-found: error
 
-      # Опционально: публикация на GitHub Pages при пуше в main.
-      # Раскомментируйте, когда сборка станет стабильной и появится
-      # смысл иметь живую ссылку на текущий прогресс.
-      # - name: Deploy to GitHub Pages
-      #   if: github.ref == 'refs/heads/main' && success()
-      #   uses: peaceiris/actions-gh-pages@v4
-      #   with:
-      #     github_token: ${{ secrets.GITHUB_TOKEN }}
-      #     publish_dir: target/site
+      - name: Upload Wasm client separately
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpha126-wasm-client
+          path: target/generated/wasm
+          if-no-files-found: error
+
+      - name: Remove temporary CI POM
+        if: always()
+        run: rm -f pom-wasm-ci.xml
