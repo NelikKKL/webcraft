@@ -116,7 +116,13 @@ extends bp {
         this.b(this.g, "Minecraft Alpha v1.2.6", 2, 2, 0x505050);
         String string = "Copyright Mojang Specifications. Do not distribute.";
         this.b(this.g, string, this.c - this.g.a(string) - 2, this.d - 10, 0xFFFFFF);
+
+        // Web-port fix: the 3D panorama leaves GL_DEPTH_TEST enabled.
+        // GUI elements are rendered at z=0, so stale depth values can reject
+        // the button quads/text. Disable depth testing for the 2D GUI pass.
+        GL11.glDisable(2929); // GL_DEPTH_TEST
         super.a(n2, n3, f2);
+        GL11.glEnable(2929);  // restore state for the next 3D render pass
     }
 
     private void a(float f2) {
