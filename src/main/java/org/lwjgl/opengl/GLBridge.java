@@ -367,6 +367,18 @@ final class GLBridge {
         GLState.AttrState a = s.attrs[attr];
         if (a.size <= 0) {
             s.gl.disableVertexAttribArray(attr);
+            // In OpenGL's fixed-function client-array model, a disabled
+            // COLOR_ARRAY falls back to the current glColor (white for the
+            // GUI). WebGL's default disabled vertex attribute is (0,0,0,1),
+            // which made textured GUI quads completely black. Explicitly
+            // restore the fixed-function defaults for disabled attributes.
+            if (attr == ATTR_COLOR) {
+                s.gl.vertexAttrib4f(attr, s.r, s.g, s.b, s.a);
+            } else if (attr == ATTR_TEXCOORD) {
+                s.gl.vertexAttrib4f(attr, 0f, 0f, 0f, 1f);
+            } else if (attr == ATTR_NORMAL) {
+                s.gl.vertexAttrib4f(attr, s.nx, s.ny, s.nz, 1f);
+            }
             return;
         }
         s.gl.enableVertexAttribArray(attr);
