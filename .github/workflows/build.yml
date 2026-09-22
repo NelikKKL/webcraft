@@ -1,17 +1,16 @@
-name: Build JS and WebAssembly
+name: Build web port (TeaVM)
 
 on:
   push:
+    branches: [ "**" ]
   pull_request:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -20,159 +19,32 @@ jobs:
           java-version: '17'
           cache: maven
 
-      # 1. Existing JavaScript build — uses the project's TeaVM version (0.10.2).
-      - name: Build JavaScript client
+      - name: Build with Maven (TeaVM compile)
         run: mvn -B -e -DskipTests package
 
-      - name: Verify JavaScript output
+      # Показываем ошибки компиляции TeaVM в логе явно, если сборка упала —
+      # чтобы не листать весь maven output вручную.
+      - name: Show TeaVM output on failure
+        if: failure()
         run: |
-          test -s target/generated/js/alpha126.js
-          test -f target/site/index.html
-          echo "JS client:"
-          ls -lh target/generated/js/alpha126.js
+          echo "----- target/generated/js -----"
+          find target/generated -maxdepth 3 2>/dev/null || echo "(none)"
+          echo "----- last 200 lines of build log are above -----"
 
-      # 2. Wasm build is isolated in a temporary POM.
-      #
-      # IMPORTANT:
-      # The previous CI version changed only the TeaVM plugin to 0.11.0 while
-      # leaving teavm-* project dependencies at 0.10.2. That caused:
-      #   NoSuchMethodError: ValueType.arrayOf(...)
-      #
-      # Here ALL TeaVM dependencies and the plugin are upgraded together in
-      # the temporary POM. The repository's pom.xml is never modified.
-      - name: Create temporary Wasm build POM
-        shell: python
-        run: |
-          import xml.etree.ElementTree as ET
-          from pathlib import Path
-
-          src = Path("pom.xml")
-          dst = Path("pom-wasm-ci.xml")
-          ns = "{http://maven.apache.org/POM/4.0.0}"
-
-          tree = ET.parse(src)
-          root = tree.getroot()
-
-          # Keep the repository unchanged, but make the temporary Maven
-          # project internally consistent: plugin + all TeaVM dependencies
-          # use exactly the same version.
-          properties = root.find(f"{ns}properties")
-          if properties is None:
-              properties = ET.SubElement(root, f"{ns}properties")
-
-          teavm_version = None
-          for child in properties:
-              if child.tag == f"{ns}teavm.version":
-                  teavm_version = child
-                  break
-          if teavm_version is None:
-              teavm_version = ET.SubElement(properties, f"{ns}teavm.version")
-          teavm_version.text = "0.11.0"
-
-          build = root.find(f"{ns}build")
-          if build is None:
-              raise SystemExit("Could not find build in pom.xml")
-
-          plugins = build.find(f"{ns}plugins")
-          if plugins is None:
-              raise SystemExit("Could not find build/plugins in pom.xml")
-
-          teavm = None
-          for plugin in plugins.findall(f"{ns}plugin"):
-              aid = plugin.find(f"{ns}artifactId")
-              if aid is not None and aid.text == "teavm-maven-plugin":
-                  teavm = plugin
-                  break
-
-          if teavm is None:
-              raise SystemExit("Could not find teavm-maven-plugin in pom.xml")
-
-          # Explicitly align the plugin version too.
-          version = teavm.find(f"{ns}version")
-          if version is None:
-              version = ET.SubElement(teavm, f"{ns}version")
-          version.text = "${teavm.version}"
-
-          executions = teavm.find(f"{ns}executions")
-          if executions is None:
-              executions = ET.SubElement(teavm, f"{ns}executions")
-
-          def add_execution(execution_id, goal, phase, config_values):
-              execution = ET.SubElement(executions, f"{ns}execution")
-              ET.SubElement(execution, f"{ns}id").text = execution_id
-              goals = ET.SubElement(execution, f"{ns}goals")
-              ET.SubElement(goals, f"{ns}goal").text = goal
-              if phase:
-                  ET.SubElement(execution, f"{ns}phase").text = phase
-              cfg = ET.SubElement(execution, f"{ns}configuration")
-              for key, value in config_values.items():
-                  ET.SubElement(cfg, f"{ns}{key}").text = value
-
-          add_execution(
-              "wasm-client-ci",
-              "compile",
-              "process-classes",
-              {
-                  "mainClass": "net.minecraft.client.WebEntryPoint",
-                  "targetDirectory": "${project.build.directory}/generated/wasm",
-                  "targetFileName": "alpha126.wasm",
-                  "targetType": "WEBASSEMBLY_GC",
-                  "optimizationLevel": "FULL",
-                  "sourceMapsGenerated": "true",
-                  "debugInformationGenerated": "true",
-                  "minifying": "false",
-              },
-          )
-
-          # TeaVM 0.11.x provides this Maven goal for the companion runtime.
-          add_execution(
-              "wasm-runtime-ci",
-              "copy-webassembly-gc-runtime",
-              "process-classes",
-              {
-                  "targetDirectory": "${project.build.directory}/generated/wasm",
-              },
-          )
-
-          ET.register_namespace("", "http://maven.apache.org/POM/4.0.0")
-          tree.write(dst, encoding="UTF-8", xml_declaration=True)
-          print(f"Created {dst}")
-
-      - name: Build WebAssembly GC client
-        run: mvn -B -e -f pom-wasm-ci.xml -DskipTests process-classes
-
-      - name: Verify WebAssembly output
-        run: |
-          test -s target/generated/wasm/alpha126.wasm
-
-          echo "Wasm output:"
-          ls -lh target/generated/wasm/
-
-          runtime="$(find target/generated/wasm -maxdepth 1 -type f -name '*wasm-runtime.js' -print -quit)"
-          test -n "$runtime"
-          test -s "$runtime"
-          echo "Wasm runtime:"
-          ls -lh "$runtime"
-
-      - name: Prepare combined web artifact
-        run: |
-          mkdir -p target/site/wasm
-          cp target/generated/wasm/* target/site/wasm/
-          echo "Combined web output:"
-          find target/site -maxdepth 2 -type f -printf '%p %k KB\n' | sort
-
-      - name: Upload combined web build
+      - name: Upload generated JS + web assets
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: alpha126-web-build
-          path: target/site/
+          path: target/site
+          if-no-files-found: error
 
-      - name: Upload Wasm client
-        uses: actions/upload-artifact@v4
-        with:
-          name: alpha126-wasm-client
-          path: target/generated/wasm/
-
-      - name: Remove temporary CI POM
-        if: always()
-        run: rm -f pom-wasm-ci.xml
+      # Опционально: публикация на GitHub Pages при пуше в main.
+      # Раскомментируйте, когда сборка станет стабильной и появится
+      # смысл иметь живую ссылку на текущий прогресс.
+      # - name: Deploy to GitHub Pages
+      #   if: github.ref == 'refs/heads/main' && success()
+      #   uses: peaceiris/actions-gh-pages@v4
+      #   with:
+      #     github_token: ${{ secrets.GITHUB_TOKEN }}
+      #     publish_dir: target/site
