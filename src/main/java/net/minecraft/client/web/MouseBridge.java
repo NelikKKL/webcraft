@@ -53,21 +53,34 @@ public final class MouseBridge {
      */
     @JSBody(params = { "canvas", "handler" }, script =
         "function flipY(y) { return canvas.height - y; }" +
+        // curX/curY отслеживают актуальную позицию курсора — используется
+        // как фолбэк в mouseup (который навешан на window и не знает rect).
+        "var curX = 0, curY = 0;" +
         "canvas.addEventListener('mousemove', function(e) {" +
         "  var rect = canvas.getBoundingClientRect();" +
-        "  var x = e.clientX - rect.left;" +
-        "  var y = flipY(e.clientY - rect.top);" +
+        "  curX = (e.clientX - rect.left) | 0;" +
+        "  curY = flipY(e.clientY - rect.top) | 0;" +
         "  var dx = e.movementX || 0;" +
         "  var dy = -(e.movementY || 0);" +
-        "  handler(0, x|0, y|0, dx|0, dy|0, -1, 0);" +
+        "  handler(0, curX, curY, dx|0, dy|0, -1, 0);" +
         "}, false);" +
+        // ИСПРАВЛЕНО: оригинальный код слал (0,0) вместо реальной позиции.
+        // bp.java использует Mouse.getEventX/Y() из самого click-события
+        // (не из mousemove) для определения нажатой кнопки GUI — без позиции
+        // все клики регистрировались в углу (0,0) и никогда не попадали
+        // в область кнопки. Теперь включаем rect-скоррект. координаты.
         "canvas.addEventListener('mousedown', function(e) {" +
         "  canvas.focus();" +
-        "  handler(1, 0, 0, 0, 0, e.button, 0);" +
+        "  var rect = canvas.getBoundingClientRect();" +
+        "  curX = (e.clientX - rect.left) | 0;" +
+        "  curY = flipY(e.clientY - rect.top) | 0;" +
+        "  handler(1, curX, curY, 0, 0, e.button, 0);" +
         "  e.preventDefault();" +
         "}, false);" +
+        // mouseup: навешан на window (чтобы ловить отпускание за пределами
+        // canvas). Позиция curX/curY уже актуальна от предыдущего mousemove.
         "window.addEventListener('mouseup', function(e) {" +
-        "  handler(2, 0, 0, 0, 0, e.button, 0);" +
+        "  handler(2, curX, curY, 0, 0, e.button, 0);" +
         "}, false);" +
         "canvas.addEventListener('wheel', function(e) {" +
         "  var w = e.deltaY < 0 ? 120 : -120;" +
