@@ -85,52 +85,35 @@
             </configuration>
           </execution>
 
-          <!-- ── WASM-билд ───────────────────────────────────────────────
-               Генерирует alpha126.wasm + runtime-обёртку alpha126.wasm.js.
-               TeaVM WASM-таргет поддерживается с 0.6.x; в 0.10.x стабилен
-               для однопоточных приложений — именно наш случай (TeaVM-JS
-               не поддерживает потоки, WASM-GC тоже, только обычный WASM).
+          <!--
+            WASM-execution временно ОТКЛЮЧЁН.
 
-               ⚠️  @JSBody / @JSFunctor НЕ РАБОТАЮТ в WASM-таргете!
-               Все нативные мосты (MouseBridge, KeyboardBridge, Canvas,
-               ResourcePreloader, WebEntryPoint, WebMinecraft…) написаны
-               через @JSBody/@JSFunctor — они специфичны для JS-таргета.
-               Реальный WASM-порт потребует замены этих мостов на
-               @Import-аннотации + отдельный JS-хост-файл (см. TODO.md).
-               Этот execution добавлен для будущего использования / CI-
-               проверки ошибок компиляции; до замены мостов сборка
-               скорее всего упадёт с "JSBody not supported in WASM target".
+            Причина (подтверждено реальным CI-прогоном): все нативные мосты
+            (MouseBridge, KeyboardBridge, ResourcePreloader, Canvas, GLRaw,
+            WebEntryPoint, WebMinecraft, Sys) написаны через @JSBody, который
+            работает только на JS-таргете — на WEBASSEMBLY сборка падает с
+            "native but has no org.teavm.interop.Import annotation".
 
-               Когда будет готово: targetDirectory можно объединить
-               с JS-директорией или сделать отдельным dist/wasm/,
-               а index.html — использовать alpha126.wasm.js вместо
-               alpha126.js с тем же window.main()/Akrile-паттерном.
+            Хуже того: WebGL2.java — это JSO-интерфейс (extends JSObject,
+            @JSMethod), а вся отрисовка (GLState → GLRaw/WebGL2/Canvas)
+            передаёт WebGL2-контекст как JS-объект через границу Java/JS.
+            Обычный (не-GC) WEBASSEMBLY-таргет TeaVM не умеет передавать
+            JS-object-ссылки вообще — только числа. Значит простой заменой
+            @JSBody → @Import тут не обойтись: либо переключаться на
+            WEBASSEMBLY_GC (если он поддерживает JSO — не проверено,
+            нужен реальный CI-прогон), либо вручную переписывать весь
+            рендер-пайплайн на голый @Import без JSO-типов (это уже почти
+            переписывание Canvas/GLRaw/WebGL2 с нуля).
+
+            План: вернуться к этому отдельной задачей, начать с пробы
+            targetType=WEBASSEMBLY_GC как наименее инвазивного варианта.
+            См. TODO.md.
           -->
-          <execution>
-            <id>web-client-wasm</id>
-            <goals>
-              <goal>compile</goal>
-            </goals>
-            <phase>process-classes</phase>
-            <configuration>
-              <mainClass>net.minecraft.client.WebEntryPoint</mainClass>
-              <targetDirectory>${project.build.directory}/generated/wasm</targetDirectory>
-              <targetFileName>alpha126.wasm</targetFileName>
-              <!-- WASM-таргет: TeaVM генерирует бинарный .wasm + JS-обёртку -->
-              <targetType>WEBASSEMBLY</targetType>
-              <optimizationLevel>SIMPLE</optimizationLevel>
-              <obfuscated>false</obfuscated>
-              <!-- Source maps для WASM отдельные (.wasm.map) -->
-              <sourceMapsGenerated>true</sourceMapsGenerated>
-              <!-- Debug-info для .teavmdbg (те же инструменты отладки) -->
-              <debugInformationGenerated>true</debugInformationGenerated>
-            </configuration>
-          </execution>
 
         </executions>
       </plugin>
 
-      <!-- Копируем сгенерированный JS/WASM и статику (index.html и т.д.)
+      <!-- Копируем сгенерированный JS и статику (index.html и т.д.)
            в один выходной каталог target/site/ (артефакт / GH Pages). -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -147,10 +130,6 @@
                 <!-- JS-таргет: alpha126.js + sourcemaps + .teavmdbg -->
                 <resource>
                   <directory>${project.build.directory}/generated/js</directory>
-                </resource>
-                <!-- WASM-таргет: alpha126.wasm + alpha126.wasm.js -->
-                <resource>
-                  <directory>${project.build.directory}/generated/wasm</directory>
                 </resource>
                 <!-- Статика: index.html, akrile.js, assets.akrile и т.д. -->
                 <resource>
