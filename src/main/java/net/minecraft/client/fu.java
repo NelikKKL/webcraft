@@ -64,7 +64,7 @@ public class fu {
             return n3;
         }
         catch (IOException iOException) {
-            throw new RuntimeException("!!");
+            throw new RuntimeException("Texture load failed: " + string, iOException);
         }
     }
 
