@@ -53,27 +53,37 @@ public final class MouseBridge {
      */
     @JSBody(params = { "canvas", "handler" }, script =
         "function flipY(y) { return canvas.height - y; }" +
+        // ИСПРАВЛЕНО: канвас растянут CSS на 100vw/100vh (см. index.html),
+        // а внутреннее разрешение буфера фиксировано (854x480, задаётся
+        // Canvas.resize). getBoundingClientRect() даёт РАЗМЕР НА ЭКРАНЕ
+        // (CSS-пиксели), который почти всегда отличается от canvas.width/
+        // canvas.height — без пересчёта клики регистрировались в неверном
+        // месте (курсор и точка клика визуально расходились). scaleX/scaleY
+        // переводят CSS-координаты клика в пространство внутреннего буфера.
+        "function toCanvasX(clientX, rect) { return ((clientX - rect.left) * (canvas.width / rect.width)) | 0; }" +
+        "function toCanvasY(clientY, rect) { return (flipY((clientY - rect.top) * (canvas.height / rect.height))) | 0; }" +
         // curX/curY отслеживают актуальную позицию курсора — используется
         // как фолбэк в mouseup (который навешан на window и не знает rect).
         "var curX = 0, curY = 0;" +
         "canvas.addEventListener('mousemove', function(e) {" +
         "  var rect = canvas.getBoundingClientRect();" +
-        "  curX = (e.clientX - rect.left) | 0;" +
-        "  curY = flipY(e.clientY - rect.top) | 0;" +
+        "  curX = toCanvasX(e.clientX, rect);" +
+        "  curY = toCanvasY(e.clientY, rect);" +
         "  var dx = e.movementX || 0;" +
         "  var dy = -(e.movementY || 0);" +
         "  handler(0, curX, curY, dx|0, dy|0, -1, 0);" +
         "}, false);" +
-        // ИСПРАВЛЕНО: оригинальный код слал (0,0) вместо реальной позиции.
-        // bp.java использует Mouse.getEventX/Y() из самого click-события
-        // (не из mousemove) для определения нажатой кнопки GUI — без позиции
-        // все клики регистрировались в углу (0,0) и никогда не попадали
-        // в область кнопки. Теперь включаем rect-скоррект. координаты.
+        // ИСПРАВЛЕНО (клики): оригинальный код слал (0,0) вместо реальной
+        // позиции. bp.java использует Mouse.getEventX/Y() из самого
+        // click-события (не из mousemove) для определения нажатой кнопки
+        // GUI — без позиции все клики регистрировались в углу (0,0) и
+        // никогда не попадали в область кнопки. Теперь координаты идут
+        // через тот же rect+scale пересчёт, что и mousemove.
         "canvas.addEventListener('mousedown', function(e) {" +
         "  canvas.focus();" +
         "  var rect = canvas.getBoundingClientRect();" +
-        "  curX = (e.clientX - rect.left) | 0;" +
-        "  curY = flipY(e.clientY - rect.top) | 0;" +
+        "  curX = toCanvasX(e.clientX, rect);" +
+        "  curY = toCanvasY(e.clientY, rect);" +
         "  handler(1, curX, curY, 0, 0, e.button, 0);" +
         "  e.preventDefault();" +
         "}, false);" +

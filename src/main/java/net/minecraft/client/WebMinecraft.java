@@ -14,6 +14,18 @@ public final class WebMinecraft extends Minecraft {
 
     public WebMinecraft(int width, int height, boolean fullscreen) {
         super(null, null, new MinecraftApplet(), width, height, fullscreen);
+        // ИСПРАВЛЕНО: в оригинале Minecraft.i ("ea" — профиль игрока: имя +
+        // sessionId) заполняется экраном логина/сессии перед стартом игры.
+        // В веб-порте такого экрана нет (см. MinecraftApplet — просто
+        // заглушка), поэтому поле оставалось null. Как только создаётся
+        // Player для нового мира (bq.java, конструктор), код читает
+        // ea2.b (имя) БЕЗ проверки на null (строка "this.name = ea2.b;"
+        // идёт уже вне охраняющего if) — падение с
+        // "TypeError: Cannot read properties of null" при первом же
+        // создании мира. sessionId ("-") не используется в одиночной
+        // игре — он нужен только сетевому коду (ib.java, join server.jsp)
+        // для мультиплеера, которого в этом порте нет.
+        this.i = new ea("Player", "-");
     }
 
     @Override
