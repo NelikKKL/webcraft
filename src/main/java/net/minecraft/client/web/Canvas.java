@@ -51,11 +51,33 @@ public final class Canvas {
         "return window.devicePixelRatio || 1;")
     public static native double devicePixelRatio();
 
-    /** Запрос Pointer Lock — нужен для Mouse.setGrabbed(true) (обзор камерой). */
-    @JSBody(params = { "canvas" }, script = "canvas.requestPointerLock();")
+    /**
+     * Запрос Pointer Lock — нужен для Mouse.setGrabbed(true) (обзор камерой).
+     *
+     * ИСПРАВЛЕНО: движок вызывает setGrabbed(true) из своего игрового цикла
+     * (requestAnimationFrame), а не напрямую из DOM-обработчика клика — браузер
+     * расценивает это как "not called from inside a short running
+     * user-generated event handler" и молча/с ошибкой отклоняет запрос
+     * (Promise из requestPointerLock() отклоняется с NotAllowedError, и если
+     * его не поймать — вылетает "Unhandled promise rejection" в консоль).
+     *
+     * Ловим и глушим этот reject здесь (первая попытка почти всегда мимо),
+     * и дополнительно выставляем флаг window.__wantsPointerLock — настоящий
+     * повторный запрос уходит из MouseBridge-обработчика canvas.mousedown
+     * (см. MouseBridge.java), который ВСЕГДА является настоящим user gesture,
+     * так что следующий же клик по канвасу реально захватывает указатель.
+     */
+    @JSBody(params = { "canvas" }, script =
+        "window.__wantsPointerLock = true;" +
+        "if (document.pointerLockElement !== canvas) {" +
+        "  var p = canvas.requestPointerLock();" +
+        "  if (p && p.catch) { p.catch(function(e) {}); }" +
+        "}")
     public static native void requestPointerLock(HTMLCanvasElement canvas);
 
-    @JSBody(params = {}, script = "document.exitPointerLock();")
+    @JSBody(params = {}, script =
+        "window.__wantsPointerLock = false;" +
+        "document.exitPointerLock();")
     public static native void exitPointerLock();
 
     @JSBody(params = { "canvas" }, script =

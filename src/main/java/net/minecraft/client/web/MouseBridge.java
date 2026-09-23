@@ -85,6 +85,13 @@ public final class MouseBridge {
         "  curX = toCanvasX(e.clientX, rect);" +
         "  curY = toCanvasY(e.clientY, rect);" +
         "  handler(1, curX, curY, 0, 0, e.button, 0);" +
+        // Повторная попытка Pointer Lock: этот mousedown — настоящий,
+        // синхронный user gesture, поэтому здесь запрос точно пройдёт
+        // (см. комментарий в Canvas.requestPointerLock).
+        "  if (window.__wantsPointerLock && document.pointerLockElement !== canvas) {" +
+        "    var p = canvas.requestPointerLock();" +
+        "    if (p && p.catch) { p.catch(function(e2) {}); }" +
+        "  }" +
         "  e.preventDefault();" +
         "}, false);" +
         // mouseup: навешан на window (чтобы ловить отпускание за пределами
