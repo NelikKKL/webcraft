@@ -18,12 +18,47 @@ public class EntityRegistry {
         classToid.put(clazz, n2);
     }
 
+    /**
+     * ИСПРАВЛЕНО: раньше здесь была рефлексия
+     * (clazz.getConstructor(Session.class).newInstance(cy2)) — она требует
+     * org.teavm.platform.Platform, которого нет на WASM-GC таргете.
+     * Явная фабрика покрывает все 18 зарегистрированных типов сущностей
+     * (см. static-блок ниже) — конструктор Class(Session) есть у каждого.
+     * package-private: используется также из bg.java (спавнер мобов),
+     * который раньше делал точно такой же реflective-вызов сам.
+     */
+    static lw construct(Class clazz, Session cy2) {
+        if (clazz == Arrow.class) return new Arrow(cy2);
+        if (clazz == Snowball.class) return new Snowball(cy2);
+        if (clazz == DroppedItem.class) return new DroppedItem(cy2);
+        if (clazz == Painting.class) return new Painting(cy2);
+        if (clazz == Mob.class) return new Mob(cy2);
+        if (clazz == Monster.class) return new Monster(cy2);
+        if (clazz == Creeper.class) return new Creeper(cy2);
+        if (clazz == Skeleton.class) return new Skeleton(cy2);
+        if (clazz == Spider.class) return new Spider(cy2);
+        if (clazz == Giant.class) return new Giant(cy2);
+        if (clazz == Zombie.class) return new Zombie(cy2);
+        if (clazz == Slime.class) return new Slime(cy2);
+        if (clazz == Ghast.class) return new Ghast(cy2);
+        if (clazz == PigZombie.class) return new PigZombie(cy2);
+        if (clazz == Pig.class) return new Pig(cy2);
+        if (clazz == Sheep.class) return new Sheep(cy2);
+        if (clazz == Cow.class) return new Cow(cy2);
+        if (clazz == Chicken.class) return new Chicken(cy2);
+        if (clazz == PrimedTNT.class) return new PrimedTNT(cy2);
+        if (clazz == FallingSand.class) return new FallingSand(cy2);
+        if (clazz == Minecart.class) return new Minecart(cy2);
+        if (clazz == Boat.class) return new Boat(cy2);
+        return null;
+    }
+
     public static lw a(String string, Session cy2) {
         lw lw2 = null;
         try {
             Class clazz = (Class)nameToClass.get(string);
             if (clazz != null) {
-                lw2 = (lw)clazz.getConstructor(Session.class).newInstance(cy2);
+                lw2 = construct(clazz, cy2);
             }
         }
         catch (Exception exception) {
@@ -37,7 +72,7 @@ public class EntityRegistry {
         try {
             Class clazz = (Class)nameToClass.get(iq2.getString("id"));
             if (clazz != null) {
-                lw2 = (lw)clazz.getConstructor(Session.class).newInstance(cy2);
+                lw2 = construct(clazz, cy2);
             }
         }
         catch (Exception exception) {
@@ -56,7 +91,7 @@ public class EntityRegistry {
         try {
             Class clazz = (Class)idToClass.get(n2);
             if (clazz != null) {
-                lw2 = (lw)clazz.getConstructor(Session.class).newInstance(cy2);
+                lw2 = construct(clazz, cy2);
             }
         }
         catch (Exception exception) {

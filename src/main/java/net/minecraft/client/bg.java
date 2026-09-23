@@ -61,7 +61,10 @@ public final class bg {
                         float f8;
                         if (!cy2.g(n11 += cy2.l.nextInt(n14) - cy2.l.nextInt(n14), (n12 += cy2.l.nextInt(1) - cy2.l.nextInt(1)) - 1, n13 += cy2.l.nextInt(n14) - cy2.l.nextInt(n14)) || cy2.g(n11, n12, n13) || cy2.f(n11, n12, n13).d() || cy2.g(n11, n12 + 1, n13) || cy2.a(f8 = (float)n11 + 0.5f, f7 = (float)n12, (double)(f6 = (float)n13 + 0.5f), 24.0) != null || (f5 = (f4 = f8 - (float)cy2.m) * f4 + (f3 = f7 - (float)cy2.n) * f3 + (f2 = f6 - (float)cy2.o) * f2) < 576.0f) continue;
                         try {
-                            hf2 = (Mob)classArray[n6].getConstructor(Session.class).newInstance(cy2);
+                            // ИСПРАВЛЕНО: было classArray[n6].getConstructor(Session.class)
+                            // .newInstance(cy2) — рефлексия не работает на WASM-GC.
+                            // Переиспользуем общую фабрику из EntityRegistry.
+                            hf2 = (Mob)EntityRegistry.construct(classArray[n6], cy2);
                         }
                         catch (Exception exception) {
                             exception.printStackTrace();

@@ -41,12 +41,27 @@ public class TileEntityRegistry {
     public void b() {
     }
 
+    /**
+     * ИСПРАВЛЕНО: раньше здесь была рефлексия (clazz.newInstance()) — она
+     * требует org.teavm.platform.Platform, которого нет на WASM-GC таргете.
+     * Явная фабрика покрывает все 4 зарегистрированных TileEntity (см.
+     * static-блок ниже). package-private: используется также из ni.java
+     * (блок Sign), который раньше делал точно такой же reflective-вызов сам.
+     */
+    static TileEntityRegistry construct(Class clazz) {
+        if (clazz == Furnace.class) return new Furnace();
+        if (clazz == Chest.class) return new Chest();
+        if (clazz == Sign.class) return new Sign();
+        if (clazz == MobSpawner.class) return new MobSpawner();
+        return null;
+    }
+
     public static TileEntityRegistry c(NBTCompoundTag iq2) {
         TileEntityRegistry ji2 = null;
         try {
             Class clazz = (Class)nameToClass.get(iq2.getString("id"));
             if (clazz != null) {
-                ji2 = (TileEntityRegistry)clazz.newInstance();
+                ji2 = construct(clazz);
             }
         }
         catch (Exception exception) {

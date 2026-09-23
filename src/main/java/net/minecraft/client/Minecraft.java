@@ -95,7 +95,11 @@ implements Runnable {
         this.U = n3;
         this.a = bl2;
         this.z = minecraftApplet;
-        new gi(this, "Timer hack thread");
+        // ИСПРАВЛЕНО: убран запуск gi ("Timer hack thread") — легаси-костыль
+        // для старых Windows JVM (поток, который просто спит вечно, ничего
+        // не делая — см. gi.java). На WASM-GC таргете Thread.start() требует
+        // org.teavm.platform.Platform, которого там нет; поведение игры не
+        // меняется ни на одном таргете, т.к. run() потока и так пуст.
         this.k = canvas;
         this.c = n2;
         this.d = n3;
@@ -137,12 +141,10 @@ implements Runnable {
         }
         catch (LWJGLException lWJGLException) {
             lWJGLException.printStackTrace();
-            try {
-                Thread.sleep(1000L);
-            }
-            catch (InterruptedException interruptedException) {
-                // empty catch block
-            }
+            // ИСПРАВЛЕНО: убран Thread.sleep(1000L) — этот catch практически
+            // недостижим в веб-порте (Display.create() — заглушка, не
+            // бросает), а Thread.sleep требует org.teavm.runtime.Fiber,
+            // которого нет на WASM-GC таргете.
             Display.create();
         }
         mn.a.f = new ku(this);

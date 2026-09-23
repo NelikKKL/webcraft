@@ -73,12 +73,14 @@ extends lh {
 
     @Override
     protected TileEntityRegistry a_() {
-        try {
-            return (TileEntityRegistry)this.a.newInstance();
+        // ИСПРАВЛЕНО: было this.a.newInstance() — рефлексия не работает на
+        // WASM-GC. Переиспользуем общую фабрику из TileEntityRegistry
+        // (this.a здесь всегда Sign.class — см. Block.java aD/aI).
+        TileEntityRegistry result = TileEntityRegistry.construct(this.a);
+        if (result == null) {
+            throw new RuntimeException("No factory for " + this.a);
         }
-        catch (Exception exception) {
-            throw new RuntimeException(exception);
-        }
+        return result;
     }
 
     @Override

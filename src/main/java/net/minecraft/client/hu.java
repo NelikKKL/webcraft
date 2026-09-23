@@ -125,12 +125,9 @@ implements pu {
         this.b.o.a(this.c, (n3 - this.b.o.a(this.c)) / 2, n4 / 2 - 4 - 16, 0xFFFFFF);
         this.b.o.a(this.a, (n3 - this.b.o.a(this.a)) / 2, n4 / 2 - 4 + 8, 0xFFFFFF);
         Display.update();
-        try {
-            Thread.yield();
-        }
-        catch (Exception exception) {
-            // empty catch block
-        }
+        // ИСПРАВЛЕНО: убран Thread.yield() — это лишь подсказка планировщику
+        // без смыслового эффекта на поведение; требует org.teavm.runtime.
+        // Fiber, которого нет на WASM-GC таргете.
     }
 }
 

@@ -24,13 +24,64 @@ public abstract class gk {
         b.put(clazz, n2);
     }
 
+    /**
+     * ИСПРАВЛЕНО: раньше здесь была рефлексия (clazz.newInstance()) — она
+     * требует org.teavm.platform.Platform, которого нет на WASM-GC таргете.
+     * Явная фабрика покрывает все 37 зарегистрированных типов пакетов
+     * (см. static-блок ниже) — у каждого класса есть no-arg конструктор
+     * (явный или неявный default).
+     */
+    private static gk construct(Class clazz) {
+        if (clazz == hl.class) return new hl();
+        if (clazz == iu.class) return new iu();
+        if (clazz == hw.class) return new hw();
+        if (clazz == jr.class) return new jr();
+        if (clazz == ek.class) return new ek();
+        if (clazz == p.class) return new p();
+        if (clazz == kv.class) return new kv();
+        if (clazz == a.class) return new a();
+        if (clazz == cq.class) return new cq();
+        if (clazz == jk.class) return new jk();
+        if (clazz == fa.class) return new fa();
+        if (clazz == t.class) return new t();
+        if (clazz == nz.class) return new nz();
+        if (clazz == cr.class) return new cr();
+        if (clazz == gc.class) return new gc();
+        if (clazz == ed.class) return new ed();
+        if (clazz == eq.class) return new eq();
+        if (clazz == mt.class) return new mt();
+        if (clazz == ii.class) return new ii();
+        if (clazz == hs.class) return new hs();
+        if (clazz == id.class) return new id();
+        if (clazz == bu.class) return new bu();
+        if (clazz == lz.class) return new lz();
+        if (clazz == fv.class) return new fv();
+        if (clazz == dv.class) return new dv();
+        if (clazz == li.class) return new li();
+        if (clazz == nh.class) return new nh();
+        if (clazz == md.class) return new md();
+        if (clazz == ll.class) return new ll();
+        if (clazz == kd.class) return new kd();
+        if (clazz == ky.class) return new ky();
+        if (clazz == fs.class) return new fs();
+        if (clazz == io.class) return new io();
+        if (clazz == lq.class) return new lq();
+        if (clazz == ci.class) return new ci();
+        if (clazz == ov.class) return new ov();
+        if (clazz == mx.class) return new mx();
+        if (clazz == py.class) return new py();
+        if (clazz == lc.class) return new lc();
+        if (clazz == qi.class) return new qi();
+        return null;
+    }
+
     public static gk a(int n2) {
         try {
             Class clazz = (Class)a.get(n2);
             if (clazz == null) {
                 return null;
             }
-            return (gk)clazz.newInstance();
+            return construct(clazz);
         }
         catch (Exception exception) {
             exception.printStackTrace();
