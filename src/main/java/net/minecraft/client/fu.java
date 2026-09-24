@@ -64,7 +64,10 @@ public class fu {
             return n3;
         }
         catch (IOException iOException) {
-            throw new RuntimeException("Texture load failed: " + string, iOException);
+            // ИСПРАВЛЕНО: было throw new RuntimeException("!!") — совершенно
+            // неинформативно при краше (не видно, какая текстура не
+            // загрузилась). Теперь путь и причина видны прямо на экране краша.
+            throw new RuntimeException("Failed to load texture: " + string + " (" + iOException + ")", iOException);
         }
     }
 

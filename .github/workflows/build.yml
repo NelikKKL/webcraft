@@ -1,6 +1,8 @@
 name: Build JS and WebAssembly
 
 on:
+  push:
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -137,11 +139,9 @@ jobs:
           print(f"Created {dst}")
 
       - name: Build WebAssembly GC client
-        continue-on-error: true
         run: mvn -B -e -f pom-wasm-ci.xml -DskipTests process-classes
 
       - name: Verify WebAssembly output
-        continue-on-error: true
         run: |
           test -s target/generated/wasm/alpha126.wasm
 
@@ -157,9 +157,7 @@ jobs:
       - name: Prepare combined web artifact
         run: |
           mkdir -p target/site/wasm
-          if [ -d target/generated/wasm ]; then
-            cp target/generated/wasm/* target/site/wasm/ || true
-          fi
+          cp target/generated/wasm/* target/site/wasm/
           echo "Combined web output:"
           find target/site -maxdepth 2 -type f -printf '%p %k KB\n' | sort
 
@@ -169,22 +167,11 @@ jobs:
           name: alpha126-web-build
           path: target/site/
 
-      - name: Upload Wasm client (if built)
-        if: always()
+      - name: Upload Wasm client
         uses: actions/upload-artifact@v4
         with:
           name: alpha126-wasm-client
           path: target/generated/wasm/
-
-
-      - name: Upload JS fallback build
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: alpha126-js-build
-          path: |
-            target/generated/js/
-            target/site/index.html
 
       - name: Remove temporary CI POM
         if: always()

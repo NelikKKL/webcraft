@@ -216,14 +216,25 @@ extends nb {
         GL11.glBlendFunc(770, 771);
         GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
         GL11.glDisable(3008);
-        GL11.glBindTexture(3553, (int)this.g.n.a("%blur%/misc/pumpkinblur.png"));
-        is is2 = is.a;
-        is2.b();
-        is2.a(0.0, n3, -90.0, 0.0, 1.0);
-        is2.a(n2, n3, -90.0, 1.0, 1.0);
-        is2.a(n2, 0.0, -90.0, 1.0, 0.0);
-        is2.a(0.0, 0.0, -90.0, 0.0, 0.0);
-        is2.a();
+        // ИСПРАВЛЕНО: /misc/pumpkinblur.png отсутствует в assets.akrile —
+        // без try/catch это валило всю игру (RuntimeException из
+        // fu.a(String) при неудачной загрузке текстуры). Эффект чисто
+        // косметический (искажение зрения от тыквы на голове) — при
+        // отсутствии текстуры пропускаем только сам квад, GL-состояние
+        // ниже восстанавливается в любом случае. Добавить сам файл в
+        // assets.akrile — отдельная задача (см. PATCHES.md).
+        try {
+            GL11.glBindTexture(3553, (int)this.g.n.a("%blur%/misc/pumpkinblur.png"));
+            is is2 = is.a;
+            is2.b();
+            is2.a(0.0, n3, -90.0, 0.0, 1.0);
+            is2.a(n2, n3, -90.0, 1.0, 1.0);
+            is2.a(n2, 0.0, -90.0, 1.0, 0.0);
+            is2.a(0.0, 0.0, -90.0, 0.0, 0.0);
+            is2.a();
+        } catch (RuntimeException e) {
+            System.out.println("Skipping pumpkinblur overlay (texture unavailable): " + e);
+        }
         GL11.glDepthMask((boolean)true);
         GL11.glEnable(2929);
         GL11.glEnable(3008);
@@ -242,14 +253,25 @@ extends nb {
         GL11.glDepthMask((boolean)false);
         GL11.glBlendFunc(0, 769);
         GL11.glColor4f((float)this.c, (float)this.c, (float)this.c, 1.0f);
-        GL11.glBindTexture(3553, (int)this.g.n.a("%blur%/misc/vignette.png"));
-        is is2 = is.a;
-        is2.b();
-        is2.a(0.0, n3, -90.0, 0.0, 1.0);
-        is2.a(n2, n3, -90.0, 1.0, 1.0);
-        is2.a(n2, 0.0, -90.0, 1.0, 0.0);
-        is2.a(0.0, 0.0, -90.0, 0.0, 0.0);
-        is2.a();
+        // ИСПРАВЛЕНО: /misc/vignette.png отсутствует в assets.akrile — без
+        // try/catch это валило всю игру (RuntimeException из fu.a(String)
+        // при неудачной загрузке текстуры). Эффект косметический
+        // (затемнение краёв экрана) — при отсутствии текстуры пропускаем
+        // только сам квад, GL-состояние ниже восстанавливается в любом
+        // случае. Добавить сам файл в assets.akrile — отдельная задача
+        // (см. PATCHES.md).
+        try {
+            GL11.glBindTexture(3553, (int)this.g.n.a("%blur%/misc/vignette.png"));
+            is is2 = is.a;
+            is2.b();
+            is2.a(0.0, n3, -90.0, 0.0, 1.0);
+            is2.a(n2, n3, -90.0, 1.0, 1.0);
+            is2.a(n2, 0.0, -90.0, 1.0, 0.0);
+            is2.a(0.0, 0.0, -90.0, 0.0, 0.0);
+            is2.a();
+        } catch (RuntimeException e) {
+            System.out.println("Skipping vignette overlay (texture unavailable): " + e);
+        }
         GL11.glDepthMask((boolean)true);
         GL11.glEnable(2929);
         GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);

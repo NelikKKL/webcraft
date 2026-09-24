@@ -68,7 +68,21 @@ public abstract class aq {
         GL11.glEnable(3042);
         GL11.glBlendFunc(770, 771);
         fu fu2 = this.b.e;
-        fu2.b(fu2.a("%clamp%/misc/shadow.png"));
+        // ИСПРАВЛЕНО: /misc/shadow.png отсутствует в assets.akrile — без
+        // try/catch это валило всю игру (RuntimeException из fu.a(String)
+        // при неудачной загрузке текстуры). Тень под мобами/игроком —
+        // чисто косметический эффект: при отсутствии текстуры пропускаем
+        // отрисовку тени для этого кадра (glDisable(3042) здесь дублирует
+        // обычную очистку в конце метода, т.к. до неё в этом случае код не
+        // доходит). Добавить сам файл в assets.akrile — отдельная задача
+        // (см. PATCHES.md).
+        try {
+            fu2.b(fu2.a("%clamp%/misc/shadow.png"));
+        } catch (RuntimeException e) {
+            System.out.println("Skipping entity shadow (texture unavailable): " + e);
+            GL11.glDisable(3042);
+            return;
+        }
         Session cy2 = this.b();
         GL11.glDepthMask((boolean)false);
         float f4 = this.c;
