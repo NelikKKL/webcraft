@@ -33,16 +33,28 @@ final class GLBridge {
     static int translateCullFace(int glFace) { return glFace; }  // GL_BACK=1029 совпадает
     static int translateBlendFactor(int f) { return f; }         // GL_SRC_ALPHA=770 и т.п. совпадают
 
-    static final int GL_TEXTURE_2D = 3553;
-    static final int GL_DEPTH_TEST = 2929;
-    static final int GL_BLEND = 3042;
-    static final int GL_CULL_FACE = 2884;
-    static final int GL_FOG = 2912;
-    static final int GL_LIGHTING = 2896;
-    static final int GL_ALPHA_TEST = 3008;
-    static final int ARRAY_BUFFER = 34962;
-    static final int STATIC_DRAW = 35044;
-    static final int STREAM_DRAW = 35040;
+    // WebGL2 понимает только чётко ограниченный набор capability-констант
+    // для enable()/disable(): DEPTH_TEST, BLEND, CULL_FACE, STENCIL_TEST,
+    // SCISSOR_TEST, DITHER, POLYGON_OFFSET_FILL, SAMPLE_ALPHA_TO_COVERAGE,
+    // SAMPLE_COVERAGE, RASTERIZER_DISCARD. Оригинальный decompiled-код
+    // (унаследованный от fixed-function OpenGL 1.1) местами включает/
+    // выключает то, чего в WebGL просто нет — например GL_LIGHT0 (16384),
+    // GL_LIGHT1 (16385), GL_COLOR_MATERIAL (2903), GL_RESCALE_NORMAL
+    // (32826). Наш кастомный шейдерный пайплайн эти состояния не читает
+    // (освещение считается через GLState.lightingEnabled самостоятельно),
+    // так что раньше не хватало не результата, а самого факта: прямая
+    // передача такой константы в gl.enable()/gl.disable() кидает
+    // GL_INVALID_ENUM, WebGL выставляет "залипающий" флаг ошибки, и на
+    // ближайшей проверке Minecraft.checkGLError() читает этот флаг и
+    // делает this.H = false — БЕЗ исключения, без экрана краша, просто
+    // тихо и навсегда останавливает игровой цикл (симптом выглядел как
+    // "чёрный экран, ничего не рисуется"). ИСПРАВЛЕНО: default-ветка
+    // теперь просто игнорирует неизвестные capability вместо передачи их
+    // в WebGL.
+    static final int GL_LIGHT0 = 16384;
+    static final int GL_LIGHT1 = 16385;
+    static final int GL_COLOR_MATERIAL = 2903;
+    static final int GL_RESCALE_NORMAL = 32826;
 
     static void setCapability(GLState s, int cap, boolean on) {
         switch (cap) {
@@ -70,10 +82,22 @@ final class GLBridge {
             case GL_CULL_FACE:
                 if (on) s.gl.enable(cap); else s.gl.disable(cap);
                 return;
+            case GL_LIGHT0:
+            case GL_LIGHT1:
+            case GL_COLOR_MATERIAL:
+            case GL_RESCALE_NORMAL:
+                // Легаси fixed-function состояния без аналога в WebGL —
+                // кастомный шейдер их не читает, просто игнорируем.
+                return;
             default:
-                if (on) s.gl.enable(cap); else s.gl.disable(cap);
+                // Неизвестная capability — не передаём в WebGL (см. выше,
+                // почему это раньше тихо валило весь рендер-цикл).
+                // Логируем один раз для отладки на случай, если это
+                // окажется что-то реально важное.
+                System.out.println("GLBridge: ignoring unknown GL capability " + cap);
         }
     }
+
 
     static void clear(GLState s, int mask) {
         s.gl.clear(mask);
