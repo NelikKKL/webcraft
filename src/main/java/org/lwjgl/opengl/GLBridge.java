@@ -51,6 +51,19 @@ final class GLBridge {
     // "чёрный экран, ничего не рисуется"). ИСПРАВЛЕНО: default-ветка
     // теперь просто игнорирует неизвестные capability вместо передачи их
     // в WebGL.
+    // OpenGL legacy enums used by the bridge. These are intentionally
+    // declared here because GLBridge is not a subclass of GL11 and Java
+    // does not implicitly import GL11's static constants.
+    static final int GL_TEXTURE_2D = 3553;
+    static final int GL_FOG = 2912;
+    static final int GL_LIGHTING = 2896;
+    static final int GL_ALPHA_TEST = 3008;
+    static final int GL_DEPTH_TEST = 2929;
+    static final int GL_BLEND = 3042;
+    static final int GL_CULL_FACE = 2884;
+    static final int ARRAY_BUFFER = 34962;
+    static final int STREAM_DRAW = 35040;
+
     static final int GL_LIGHT0 = 16384;
     static final int GL_LIGHT1 = 16385;
     static final int GL_COLOR_MATERIAL = 2903;
