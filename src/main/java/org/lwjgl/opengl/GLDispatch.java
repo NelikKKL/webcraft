@@ -148,52 +148,64 @@ final class GLDispatch {
     // decomp-код явно этим пользуется (см. is.java: buffer.position(3) перед
     // glTexCoordPointer, buffer.position(0) перед glVertexPointer — общий
     // interleaved FloatBuffer, разный "срез" через position()). Поэтому
-    // захватываем position() ЗДЕСЬ, синхронно, вне зависимости от recording —
-    // к моменту фактического воспроизведения (glCallList) позиция буфера
-    // могла уже измениться на что угодно посторонним кодом.
+    // захватываем position() ЗДЕСЬ, синхронно — актуально всегда.
     //
-    // ВАЖНО #2: сама установка состояния (какой буфер/offset/stride активны)
-    // должна идти через maybeRecord() так же, как glDrawArrays — иначе
-    // display list с несколькими парами (glVertexPointer, glDrawArrays)
-    // внутри одного list'а (типичный паттерн для террейна: разные грани/
-    // подмеши с разными офсетами в одном и том же display list) при
-    // воспроизведении будут все рисоваться ПОСЛЕДНИМ набором вершин,
-    // записанным во время compile-фазы, а не тем набором, что был активен
-    // непосредственно перед каждым конкретным glDrawArrays.
+    // ВАЖНО #2 (ИСПРАВЛЕНО): раньше сама установка указателя тоже уходила
+    // через maybeRecord() — идея была в том, что несколько пар
+    // (glVertexPointer, glDrawArrays) с РАЗНЫМИ офсетами внутри ОДНОГО
+    // display list'а (обычный паттерн для террейна: разные грани/подмеши в
+    // одном list'е) должны при воспроизведении брать каждая свой офсет, а
+    // не последний записанный. Но это ломало кое-что более фундаментальное:
+    // glVertexPointer в НАСТОЯЩЕМ OpenGL вообще не компилируется в display
+    // list — компилируется только glDrawArrays, который на момент записи
+    // "запекает" данные ИЗ ТЕКУЩИХ (на тот момент) указателей. Раз установка
+    // указателя была отложена, GLState.attrs[i].fromClient/clientBuffer к
+    // моменту вызова glDrawArrays (тоже во время записи!) ещё не
+    // обновлялись — снимок в drawArrays() (см. ниже) проверял устаревший
+    // fromClient=false и никогда не срабатывал, из-за чего geometry чанков
+    // рисовалась пустой/неверной при каждом glCallList (коллизии работали,
+    // т.к. они не зависят от кэша геометрии).
+    //
+    // Установка указателя теперь применяется НЕМЕДЛЕННО всегда — это не
+    // ломает сценарий "несколько офсетов в одном list": вызовы идут строго
+    // последовательно в рамках одного синхронного цикла тесселляции, так что
+    // к моменту КАЖДОГО glDrawArrays state уже отражает офсет именно этого
+    // под-рисунка (glVertexPointer для него вызывается непосредственно
+    // перед) — drawArrays() ниже сам снимает снимок в момент записи.
     static void vertexPointerClient(int size, int stride, FloatBuffer buffer) {
         int baseOffset = buffer.position();
-        maybeRecord(() -> GLBridge.setClientArray(s(), GLBridge.ATTR_POSITION, size, stride, buffer, baseOffset));
+        GLBridge.setClientArray(s(), GLBridge.ATTR_POSITION, size, stride, buffer, baseOffset);
     }
 
     static void vertexPointerOffset(int size, int type, int stride, long offset) {
-        maybeRecord(() -> GLBridge.setBoundArray(s(), GLBridge.ATTR_POSITION, size, stride, offset));
+        GLBridge.setBoundArray(s(), GLBridge.ATTR_POSITION, size, stride, offset);
     }
 
     static void texCoordPointerClient(int size, int stride, FloatBuffer buffer) {
         int baseOffset = buffer.position();
-        maybeRecord(() -> GLBridge.setClientArray(s(), GLBridge.ATTR_TEXCOORD, size, stride, buffer, baseOffset));
+        GLBridge.setClientArray(s(), GLBridge.ATTR_TEXCOORD, size, stride, buffer, baseOffset);
     }
 
     static void texCoordPointerOffset(int size, int type, int stride, long offset) {
-        maybeRecord(() -> GLBridge.setBoundArray(s(), GLBridge.ATTR_TEXCOORD, size, stride, offset));
+        GLBridge.setBoundArray(s(), GLBridge.ATTR_TEXCOORD, size, stride, offset);
     }
 
     static void colorPointerClient(int size, int stride, ByteBuffer buffer) {
         int baseOffset = buffer.position();
-        maybeRecord(() -> GLBridge.setClientArrayBytes(s(), GLBridge.ATTR_COLOR, size, stride, buffer, baseOffset));
+        GLBridge.setClientArrayBytes(s(), GLBridge.ATTR_COLOR, size, stride, buffer, baseOffset);
     }
 
     static void colorPointerOffset(int size, int type, int stride, long offset) {
-        maybeRecord(() -> GLBridge.setBoundArray(s(), GLBridge.ATTR_COLOR, size, stride, offset));
+        GLBridge.setBoundArray(s(), GLBridge.ATTR_COLOR, size, stride, offset);
     }
 
     static void normalPointerClient(int stride, ByteBuffer buffer) {
         int baseOffset = buffer.position();
-        maybeRecord(() -> GLBridge.setClientArrayBytes(s(), GLBridge.ATTR_NORMAL, 3, stride, buffer, baseOffset));
+        GLBridge.setClientArrayBytes(s(), GLBridge.ATTR_NORMAL, 3, stride, buffer, baseOffset);
     }
 
     static void normalPointerOffset(int type, int stride, long offset) {
-        maybeRecord(() -> GLBridge.setBoundArray(s(), GLBridge.ATTR_NORMAL, 3, stride, offset));
+        GLBridge.setBoundArray(s(), GLBridge.ATTR_NORMAL, 3, stride, offset);
     }
 
     static void drawArrays(int mode, int first, int count) {
@@ -236,7 +248,7 @@ final class GLDispatch {
     static void disableClientState(int cap) {
         int attr = GLBridge.clientStateToAttr(cap);
         if (attr < 0) return;
-        maybeRecord(() -> s().attrs[attr].size = 0);
+        s().attrs[attr].size = 0;
     }
 
     // --- lighting / fog ---
