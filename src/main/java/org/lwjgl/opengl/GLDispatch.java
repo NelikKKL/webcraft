@@ -197,6 +197,39 @@ final class GLDispatch {
     }
 
     static void drawArrays(int mode, int first, int count) {
+        GLState state = s();
+        if (state.isRecordingPublic()) {
+            boolean anyClient = false;
+            for (GLState.AttrState a : state.attrs) {
+                if (a.size > 0 && a.fromClient) { anyClient = true; break; }
+            }
+            if (anyClient) {
+                // ИСПРАВЛЕНО (главная причина "блоки есть по коллизии, но
+                // невидимы"): раньше весь glDrawArrays целиком откладывался
+                // через maybeRecord() — включая чтение client-side буферов
+                // (is.java Tessellator использует ОДИН переиспользуемый
+                // ByteBuffer для HUD, GUI, неба И КАЖДОГО чанка). Display
+                // list чанка компилируется ОДИН раз, а воспроизводится
+                // (glCallList) много кадров спустя — к этому моменту общий
+                // буфер тессельятора уже десятки раз перезаписан другими
+                // отрисовками, и stageClientBuffers() при реальном
+                // воспроизведении читал уже ЧУЖИЕ/пустые данные. Небо
+                // работало только потому, что его display list
+                // перезаписывается и тут же проигрывается в том же кадре —
+                // буфер ещё не успевал измениться.
+                //
+                // Теперь: если сейчас идёт запись list'а и хотя бы один
+                // атрибут — client-side буфер, СНИМАЕМ снимок данных
+                // СРАЗУ (пока буфер ещё содержит то, что только что
+                // затессельировал вызывающий код), и в отложенный вызов
+                // передаём уже готовый float[] снимок, а не ссылку на
+                // живой буфер. Коллизии (данные блоков в мире) эта ошибка
+                // никогда не задевала — она чисто про кэш геометрии.
+                float[] snapshot = GLBridge.snapshotClientBuffers(state, first, count);
+                state.recordPublic(() -> GLBridge.drawArraysFromSnapshot(s(), mode, snapshot, count));
+                return;
+            }
+        }
         maybeRecord(() -> GLBridge.drawArrays(s(), mode, first, count));
     }
 

@@ -310,8 +310,18 @@ final class GLBridge {
         return glMode;
     }
 
-    /** Собираем interleaved float-массив [pos3, uv2, color4, normal3] = 12 floats/vertex в scratch VBO. */
-    private static void stageClientBuffers(GLState s, int first, int count) {
+    /**
+     * Строит interleaved-снимок [pos3, uv2, color4, normal3] ПРЯМО СЕЙЧАС из
+     * текущих client-side буферов атрибутов. Используется в двух случаях:
+     *  1) немедленная отрисовка (stageClientBuffers ниже вызывает ровно ту
+     *     же логику через readAttr*, см. её тело) — там buffer живой и это
+     *     не имеет значения, т.к. draw идёт тут же;
+     *  2) запись в display list (см. GLDispatch.drawArrays) — здесь как раз
+     *     критично снять снимок СЕЙЧАС, а не откладывать чтение буфера на
+     *     момент glCallList в будущем, когда общий буфер тессельятора уже
+     *     будет содержать данные совсем другого рисунка.
+     */
+    static float[] snapshotClientBuffers(GLState s, int first, int count) {
         final int FLOATS_PER_VERTEX = 12; // 3 pos + 2 uv + 4 color + 3 normal
         float[] interleaved = new float[count * FLOATS_PER_VERTEX];
 
@@ -324,13 +334,40 @@ final class GLBridge {
             readAttrColorDefault(s.attrs[ATTR_COLOR], vtx, interleaved, base + 5, s);
             readAttrNormalDefault(s.attrs[ATTR_NORMAL], vtx, interleaved, base + 9, s);
         }
+        return interleaved;
+    }
 
+    /** Заливает уже готовый (замороженный на момент записи list'а) снимок вершин в scratch VBO и рисует. */
+    static void drawArraysFromSnapshot(GLState s, int mode, float[] interleaved, int count) {
+        uploadScratch(s, interleaved);
+        setStagedOffsets(s);
+        bindVertexAttribs(s);
+        applyUniforms(s);
+
+        int glMode = translateDrawMode(mode);
+        if (mode == 7 /* GL_QUADS */) {
+            final int GL_TRIANGLE_FAN = 6;
+            int quads = count / 4;
+            for (int q = 0; q < quads; q++) {
+                s.gl.drawArrays(GL_TRIANGLE_FAN, q * 4, 4);
+            }
+        } else {
+            s.gl.drawArrays(glMode, 0, count);
+        }
+    }
+
+    private static void uploadScratch(GLState s, float[] interleaved) {
         if (s.scratchVbo == null) s.scratchVbo = s.gl.createBuffer();
         s.gl.bindBuffer(ARRAY_BUFFER, s.scratchVbo);
         Float32Array data = Float32ArrayFactory.wrap(interleaved);
         s.gl.bufferData(ARRAY_BUFFER, data, STREAM_DRAW);
         s.boundArrayBuffer = s.scratchVbo;
+    }
 
+    /** Собираем interleaved float-массив [pos3, uv2, color4, normal3] = 12 floats/vertex в scratch VBO. */
+    private static void stageClientBuffers(GLState s, int first, int count) {
+        float[] interleaved = snapshotClientBuffers(s, first, count);
+        uploadScratch(s, interleaved);
         // После стейджинга все атрибуты читаются из scratch VBO по фиксированным офсетам.
         setStagedOffsets(s);
     }
