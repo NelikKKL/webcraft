@@ -41,6 +41,49 @@ final class GLDispatch {
         maybeRecord(() -> GLBridge.setCapability(s(), cap, on));
     }
 
+    // --- matrix stack ---
+    // ИСПРАВЛЕНО: раньше эти методы вызывали GLState напрямую (see old
+    // GL11.glPushMatrix/glTranslatef/etc), минуя запись в display list.
+    // Настоящий OpenGL КОМПИЛИРУЕТ glPushMatrix/glTranslatef/glScalef/
+    // glRotatef/glPopMatrix/glLoadIdentity/glMatrixMode внутри glNewList —
+    // без этого перенос чанка в его мировую позицию (glPushMatrix +
+    // glTranslatef + ... + glPopMatrix вокруг тесселляции в bw.java)
+    // применялся только ОДИН РАЗ при компиляции и тут же откатывался
+    // парным glPopMatrix — к моменту реального glCallList (много кадров
+    // спустя) от этого смещения не оставалось и следа: вершины (корректные
+    // локальные 0..15 координаты блока) рисовались без пересчёта в мировые
+    // координаты, используя ЧТО БЫ ТО НИ БЫЛО в текущей modelview-матрице
+    // на тот момент — отсюда "блоки есть по коллизии, но невидимы": данные
+    // и текстуры были в порядке, но чанк рисовался в случайном/неверном
+    // месте (или вне видимости) относительно текущей камеры.
+    static void matrixMode(int mode) {
+        maybeRecord(() -> s().matrixMode(mode));
+    }
+
+    static void loadIdentity() {
+        maybeRecord(() -> s().loadIdentity());
+    }
+
+    static void pushMatrix() {
+        maybeRecord(() -> s().pushMatrix());
+    }
+
+    static void popMatrix() {
+        maybeRecord(() -> s().popMatrix());
+    }
+
+    static void translatef(float x, float y, float z) {
+        maybeRecord(() -> s().translatef(x, y, z));
+    }
+
+    static void rotatef(float angle, float x, float y, float z) {
+        maybeRecord(() -> s().rotatef(angle, x, y, z));
+    }
+
+    static void scalef(float x, float y, float z) {
+        maybeRecord(() -> s().scalef(x, y, z));
+    }
+
     static void clear(int mask) {
         maybeRecord(() -> GLBridge.clear(s(), mask));
     }

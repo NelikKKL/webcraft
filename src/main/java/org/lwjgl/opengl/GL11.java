@@ -50,13 +50,13 @@ public final class GL11 {
     // ---------------------------------------------------------------
     // Матрицы
     // ---------------------------------------------------------------
-    public static void glMatrixMode(int mode) { s().matrixMode(mode); }
-    public static void glLoadIdentity() { s().loadIdentity(); }
-    public static void glPushMatrix() { s().pushMatrix(); }
-    public static void glPopMatrix() { s().popMatrix(); }
-    public static void glTranslatef(float x, float y, float z) { s().translatef(x, y, z); }
-    public static void glRotatef(float angle, float x, float y, float z) { s().rotatef(angle, x, y, z); }
-    public static void glScalef(float x, float y, float z) { s().scalef(x, y, z); }
+    public static void glMatrixMode(int mode) { GLDispatch.matrixMode(mode); }
+    public static void glLoadIdentity() { GLDispatch.loadIdentity(); }
+    public static void glPushMatrix() { GLDispatch.pushMatrix(); }
+    public static void glPopMatrix() { GLDispatch.popMatrix(); }
+    public static void glTranslatef(float x, float y, float z) { GLDispatch.translatef(x, y, z); }
+    public static void glRotatef(float angle, float x, float y, float z) { GLDispatch.rotatef(angle, x, y, z); }
+    public static void glScalef(float x, float y, float z) { GLDispatch.scalef(x, y, z); }
     public static void glOrtho(double l, double r, double b, double t, double n, double f) { s().ortho(l, r, b, t, n, f); }
 
     // ---------------------------------------------------------------
