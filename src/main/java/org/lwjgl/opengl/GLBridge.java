@@ -340,7 +340,7 @@ final class GLBridge {
     /** Заливает уже готовый (замороженный на момент записи list'а) снимок вершин в scratch VBO и рисует. */
     static void drawArraysFromSnapshot(GLState s, int mode, float[] interleaved, int count) {
         uploadScratch(s, interleaved);
-        setStagedOffsets(s);
+        setStagedOffsetsForce(s);
         bindVertexAttribs(s);
         applyUniforms(s);
 
@@ -370,6 +370,45 @@ final class GLBridge {
         uploadScratch(s, interleaved);
         // После стейджинга все атрибуты читаются из scratch VBO по фиксированным офсетам.
         setStagedOffsets(s);
+    }
+
+    /**
+     * ИСПРАВЛЕНО: обычный setStagedOffsets() пропускает атрибут, если его
+     * текущий a.size <= 0 — это верно для НЕМЕДЛЕННОЙ отрисовки (там a.size
+     * гарантированно отражает состояние ИМЕННО ЭТОГО draw call'а), но
+     * ЛОМАЕТСЯ для воспроизведения display list'а: между записью чанка и
+     * его реальным glCallList (много кадров спустя) успевает отрисоваться
+     * куча НЕСВЯЗАННОГО кода (HUD, рука игрока, другие чанки), который
+     * вызывает glDisableClientState для НЕ НУЖНЫХ ЕМУ атрибутов (например,
+     * 2D-квад HUD использует только position+texcoord, отключая color/
+     * normal) — а это НАПРЯМУЮ мутирует те же самые общие GLState.attrs[].
+     * К моменту реального replay a.size для COLOR/NORMAL мог оказаться 0
+     * от ЧУЖОГО, никак не связанного вызова — и обычный setStagedOffsets
+     * молча пропускал стейджинг, оставляя bindOne() применять "текущий"
+     * (chужой!) default-цвет через vertexAttrib4f(s.r,s.g,s.b,s.a). Если в
+     * этот момент s.a случайно было < 0.004 (например, из-за недавнего
+     * прозрачного оверлея), фрагментный шейдер (if (color.a<0.004) discard;)
+     * выбрасывал АБСОЛЮТНО ВСЕ пиксели чанка — блоки существовали, текстура
+     * была привязана верно, но ничего не рисовалось.
+     *
+     * Снимок (snapshot) уже содержит ПРАВИЛЬНЫЕ данные для всех 4 каналов
+     * (реальные или вменяемые дефолты — см. readAttr) на момент записи —
+     * поэтому здесь стейджим ВСЕ 4 канала безусловно, игнорируя то, что
+     * сейчас случайно лежит в a.size от постороннего кода.
+     */
+    private static void setStagedOffsetsForce(GLState s) {
+        int strideBytes = 12 * 4;
+        forceStage(s.attrs[ATTR_POSITION], 3, 0, strideBytes);
+        forceStage(s.attrs[ATTR_TEXCOORD], 2, 3 * 4, strideBytes);
+        forceStage(s.attrs[ATTR_COLOR], 4, 5 * 4, strideBytes);
+        forceStage(s.attrs[ATTR_NORMAL], 3, 9 * 4, strideBytes);
+    }
+
+    private static void forceStage(GLState.AttrState a, int size, int offset, int stride) {
+        a.fromClient = false;
+        a.offset = offset;
+        a.stride = stride;
+        a.size = size;
     }
 
     private static void setStagedOffsets(GLState s) {
