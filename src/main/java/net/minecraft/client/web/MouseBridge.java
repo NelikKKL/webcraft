@@ -53,6 +53,11 @@ public final class MouseBridge {
      */
     @JSBody(params = { "canvas", "handler" }, script =
         "function flipY(y) { return canvas.height - y; }" +
+        // ИСПРАВЛЕНО (правая кнопка не ставила блоки): в DOM e.button: 0=левая,
+        // 1=СРЕДНЯЯ, 2=ПРАВАЯ, а в LWJGL (и в decomp Minecraft.java) 0=левая,
+        // 1=ПРАВАЯ, 2=средняя. Без перевода ПКМ приходил как '2' (средняя)
+        // и вместо установки блока срабатывал pick-block (t()).
+        "function mapButton(b) { return b === 1 ? 2 : (b === 2 ? 1 : b); }" +
         // ИСПРАВЛЕНО: канвас растянут CSS на 100vw/100vh (см. index.html),
         // а внутреннее разрешение буфера фиксировано (854x480, задаётся
         // Canvas.resize). getBoundingClientRect() даёт РАЗМЕР НА ЭКРАНЕ
@@ -84,7 +89,7 @@ public final class MouseBridge {
         "  var rect = canvas.getBoundingClientRect();" +
         "  curX = toCanvasX(e.clientX, rect);" +
         "  curY = toCanvasY(e.clientY, rect);" +
-        "  handler(1, curX, curY, 0, 0, e.button, 0);" +
+        "  handler(1, curX, curY, 0, 0, mapButton(e.button), 0);" +
         // Повторная попытка Pointer Lock: этот mousedown — настоящий,
         // синхронный user gesture, поэтому здесь запрос точно пройдёт
         // (см. комментарий в Canvas.requestPointerLock).
@@ -97,7 +102,7 @@ public final class MouseBridge {
         // mouseup: навешан на window (чтобы ловить отпускание за пределами
         // canvas). Позиция curX/curY уже актуальна от предыдущего mousemove.
         "window.addEventListener('mouseup', function(e) {" +
-        "  handler(2, curX, curY, 0, 0, e.button, 0);" +
+        "  handler(2, curX, curY, 0, 0, mapButton(e.button), 0);" +
         "}, false);" +
         "canvas.addEventListener('wheel', function(e) {" +
         "  var w = e.deltaY < 0 ? 120 : -120;" +

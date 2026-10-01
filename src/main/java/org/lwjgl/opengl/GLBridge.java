@@ -531,7 +531,15 @@ final class GLBridge {
         s.gl.uniform1f(sh.uFogEnd, s.fogEnd);
         s.gl.uniform4f(sh.uFogColor, s.fogColor[0], s.fogColor[1], s.fogColor[2], s.fogColor[3]);
 
-        s.gl.uniform4f(sh.uColorMult, s.r, s.g, s.b, s.a);
+        // ИСПРАВЛЕНО (блоки становились прозрачными в меню паузы): текущий
+        // glColor уже попадает в шейдер через атрибут aColor (bindOne/
+        // readAttrColorDefault подставляют s.r/g/b/a, когда массив цветов
+        // выключен), а в fixed-function GL при включённом массиве цветов
+        // glColor вообще не применяется. Раньше шейдер ещё и умножал на
+        // uColorMult = текущий glColor: при проигрывании display list чанков
+        // там лежал "хвост" от GUI (градиент паузы с alpha < 1), и все блоки
+        // рисовались полупрозрачными. Множитель всегда единичный.
+        s.gl.uniform4f(sh.uColorMult, 1f, 1f, 1f, 1f);
     }
 
     // --- lighting / fog setters ---
