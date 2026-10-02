@@ -67,6 +67,13 @@ implements pu {
         this.d = 0L;
     }
 
+    /** Web-порт: перерисовать экран загрузки в ЭТОМ кадре (без троттлинга 20 мс),
+     *  иначе canvas после показа кадра очищается и экран мигает. */
+    public void refresh(int n2) {
+        this.d = 0L;
+        this.a(n2);
+    }
+
     @Override
     public void a(int n2) {
         if (!this.b.H) {

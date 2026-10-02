@@ -311,6 +311,10 @@ public class kb {
             }
             GL11.glViewport(0, 0, (int)this.h.c, (int)this.h.d);
             this.h(f2);
+            // Страховка web-порта: glClear(depth) в GL учитывает glDepthMask, а
+            // 3D-проход требует включённого теста глубины, что бы ни оставил GUI.
+            GL11.glEnable(2929);
+            GL11.glDepthMask(true);
             GL11.glClear(16640);
             GL11.glEnable(2884);
             this.a(f2, i2);

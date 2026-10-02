@@ -429,6 +429,24 @@ implements Runnable {
         if (!isRunning()) {
             return;
         }
+        if (this.loadingActive) {
+            // Идёт прогрев мира: обычный тик/рендер пропускаем, показываем прогресс.
+            boolean done = true;
+            try {
+                done = this.stepLoading();
+            } catch (Exception exception) {
+                exception.printStackTrace();
+            }
+            if (done) {
+                this.loadingActive = false;
+                Runnable finish = this.loadFinish;
+                this.loadFinish = null;
+                if (finish != null) {
+                    finish.run();
+                }
+            }
+            return;
+        }
         if (fpsTimerMs < 0) {
             fpsTimerMs = System.currentTimeMillis();
         }
@@ -447,6 +465,9 @@ implements Runnable {
             }
             long l3 = System.nanoTime();
             for (int i2 = 0; i2 < this.P.b; ++i2) {
+                if (this.loadingActive) {
+                    break;
+                }
                 ++this.R;
                 try {
                     this.i();
@@ -459,6 +480,12 @@ implements Runnable {
                 }
             }
             long l4 = System.nanoTime() - l3;
+            if (this.loadingActive) {
+                // Загрузку запустили прямо из GUI-клика в этом кадре: игрока ещё нет,
+                // обычный рендер мира пропускаем и рисуем экран прогресса.
+                this.q.refresh(Math.min(99, this.loadDone * 100 / (17 * 17)));
+                return;
+            }
             this.c("Pre render");
             this.A.a(this.g, this.P.c);
             GL11.glEnable(3553);
@@ -832,6 +859,9 @@ implements Runnable {
         }
         if (this.p == null || this.p.f) {
             while (Mouse.next()) {
+                if (this.loadingActive) {
+                    continue;
+                }
                 long l2 = System.currentTimeMillis() - this.N;
                 if (l2 > 200L) continue;
                 int n2 = Mouse.getEventDWheel();
@@ -862,6 +892,9 @@ implements Runnable {
                 --this.S;
             }
             while (Keyboard.next()) {
+                if (this.loadingActive) {
+                    continue;
+                }
                 this.g.a(Keyboard.getEventKey(), Keyboard.getEventKeyState());
                 if (!Keyboard.getEventKeyState()) continue;
                 if (Keyboard.getEventKey() == 87) {
@@ -897,7 +930,7 @@ implements Runnable {
                 if (Keyboard.getEventKey() != this.y.s.b) continue;
                 this.y.b(4, Keyboard.isKeyDown(42) || Keyboard.isKeyDown(54) ? -1 : 1);
             }
-            if (this.p == null) {
+            if (this.p == null && !this.loadingActive) {
                 if (Mouse.isButtonDown(0) && (float)(this.R - this.aa) >= this.P.a / 4.0f && this.L) {
                     this.a(0);
                     this.aa = this.R;
@@ -907,9 +940,11 @@ implements Runnable {
                     this.aa = this.R;
                 }
             }
-            this.a(0, this.p == null && Mouse.isButtonDown(0) && this.L);
+            if (!this.loadingActive) {
+                this.a(0, this.p == null && Mouse.isButtonDown(0) && this.L);
+            }
         }
-        if (this.e != null) {
+        if (this.e != null && !this.loadingActive) {
             if (this.g != null) {
                 ++this.ab;
                 if (this.ab == 30) {
@@ -958,10 +993,17 @@ implements Runnable {
         this.a((Session)null);
         System.gc();
         Session cy2 = new Session(new File(Minecraft.b(), "saves"), string);
-        if (cy2.p) {
-            this.a(cy2, "Generating level");
-        } else {
-            this.a(cy2, "Loading level");
+        // Web-порт: прогрев чанков идёт по кадрам, чтобы браузер успевал рисовать
+        // экран "Building terrain" (см. beginLoading/stepLoading).
+        this.deferLoad = true;
+        try {
+            if (cy2.p) {
+                this.a(cy2, "Generating level");
+            } else {
+                this.a(cy2, "Loading level");
+            }
+        } finally {
+            this.deferLoad = false;
         }
     }
 
@@ -998,6 +1040,10 @@ implements Runnable {
     }
 
     public void a(Session cy2, String string, Player eb2) {
+        final boolean defer = this.deferLoad;
+        this.deferLoad = false;
+        this.loadingActive = false;
+        this.loadFinish = null;
         this.q.a(string);
         this.q.d("");
         this.A.a(null, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
@@ -1019,8 +1065,28 @@ implements Runnable {
                 }
             }
             if (!cy2.z) {
+                if (defer) {
+                    // Остаток метода выполнится, когда мир прогреется.
+                    this.beginLoading(string, () -> {
+                        this.a2(cy2, string, eb2);
+                        System.gc();
+                        this.N = 0L;
+                    });
+                    return;
+                }
                 this.d(string);
             }
+            this.a2(cy2, string, eb2);
+        } else {
+            this.g = null;
+        }
+        System.gc();
+        this.N = 0L;
+    }
+
+    /** Вторая половина бывшего a(Session,String,Player): после прогрева чанков. */
+    private void a2(Session cy2, String string, Player eb2) {
+        if (cy2 != null) {
             System.out.println("Player is now " + this.g);
             if (this.g == null) {
                 this.g = (bq)this.b.b(cy2);
@@ -1042,11 +1108,65 @@ implements Runnable {
             if (cy2.p) {
                 cy2.a(this.q);
             }
-        } else {
-            this.g = null;
         }
-        System.gc();
-        this.N = 0L;
+    }
+
+    // ---- Web-порт: пошаговый прогрев чанков (вместо блокирующего цикла) ----
+    private boolean deferLoad = false;
+    private boolean loadingActive = false;
+    private Runnable loadFinish = null;
+    private int loadStage = 0;
+    private int loadX = -128;
+    private int loadZ = -128;
+    private int loadDone = 0;
+
+    private void beginLoading(String title, Runnable finish) {
+        this.loadFinish = finish;
+        this.loadStage = 0;
+        this.loadX = -128;
+        this.loadZ = -128;
+        this.loadDone = 0;
+        this.loadingActive = true;
+        this.q.a(title);
+        this.q.d("Building terrain");
+    }
+
+    /** Один кадр загрузки: ~25 мс работы + перерисовка прогресса. true — загрузка завершена. */
+    private boolean stepLoading() {
+        if (this.e == null) {
+            return true;
+        }
+        long t0 = System.currentTimeMillis();
+        final int total = 17 * 17;
+        while (this.loadStage == 0) {
+            int cx = this.e.m;
+            int cz = this.e.o;
+            if (this.g != null) {
+                cx = (int)this.g.aw;
+                cz = (int)this.g.ay;
+            }
+            this.e.a(cx + this.loadX, 64, cz + this.loadZ);
+            while (this.e.g()) {
+            }
+            ++this.loadDone;
+            this.loadZ += 16;
+            if (this.loadZ > 128) {
+                this.loadZ = -128;
+                this.loadX += 16;
+                if (this.loadX > 128) {
+                    this.loadStage = 1;
+                }
+            }
+            if (System.currentTimeMillis() - t0 >= 25L) {
+                break;
+            }
+        }
+        if (this.loadStage == 0) {
+            this.q.refresh(Math.min(99, this.loadDone * 100 / total));
+            return false;
+        }
+        this.e.l();
+        return true;
     }
 
     private void d(String string) {
