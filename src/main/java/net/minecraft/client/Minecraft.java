@@ -325,7 +325,7 @@ implements Runnable {
         }
         if (bp2 == null && this.e == null) {
             bp2 = new dj();
-        } else if (bp2 == null && this.g.J <= 0) {
+        } else if (bp2 == null && this.g != null && this.g.J <= 0) {
             bp2 = new GameOverScreen();
         }
         this.p = bp2;
