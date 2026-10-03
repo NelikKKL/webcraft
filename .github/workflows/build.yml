@@ -123,7 +123,11 @@ jobs:
                   "targetDirectory": "${project.build.directory}/generated/wasm",
                   "targetFileName": "alpha126.wasm",
                   "targetType": "WEBASSEMBLY_GC",
-                  "optimizationLevel": "FULL",
+                  # SIMPLE вместо FULL: на FULL TeaVM 0.11.0 (WasmGC) инлайнит метод
+                  # d.c(Minecraft) в единственное место вызова (dk.a:149) и выкидывает его
+                  # тело, но слот в vtable остаётся -> NPE в
+                  # WasmGCMethodGenerator.generateRegularMethodBody. JS-сборка уже на SIMPLE.
+                  "optimizationLevel": "SIMPLE",
                   "sourceMapsGenerated": "true",
                   "debugInformationGenerated": "true",
                   "minifying": "false",
