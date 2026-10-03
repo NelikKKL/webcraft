@@ -408,9 +408,23 @@ final class GLBridge {
         private final int vertexCount;
         private WebGLBuffer vbo;
         private WebGLVertexArrayObject vao;
+        // ИСПРАВЛЕНИЕ "моб становится полностью белым при уроне": если на момент
+        // записи массив цвета (или нормали) был выключен, вершины берут
+        // ТЕКУЩИЙ glColor/glNormal — и в настоящем GL это значение читается при
+        // ВОСПРОИЗВЕДЕНИИ list'а, а не запекается. Модели мобов (ka.java)
+        // записываются в list один раз с белым glColor, а красный оверлей урона
+        // (ec.java: glColor4f(f,0,0,0.4)) выставляется перед glCallList.
+        // Раньше снимок запекал белый цвет → оверлей рисовался белым.
+        // Теперь такие атрибуты в VAO выключены, а значение подставляется на replay.
+        private final boolean colorFromState;
+        private final boolean normalFromState;
 
         DrawRecord(GLState s, int mode, float[] snap, int count) {
             this.s = s;
+            GLState.AttrState ca = s.attrs[ATTR_COLOR];
+            GLState.AttrState na = s.attrs[ATTR_NORMAL];
+            this.colorFromState = ca.size <= 0 || !ca.fromClient;
+            this.normalFromState = na.size <= 0 || !na.fromClient;
             float[] data = snap;
             int n = count;
             int drawMode = mode;
@@ -445,10 +459,18 @@ final class GLBridge {
             gl.vertexAttribPointer(ATTR_POSITION, 3, 5126, false, stride, 0);
             gl.enableVertexAttribArray(ATTR_TEXCOORD);
             gl.vertexAttribPointer(ATTR_TEXCOORD, 2, 5126, false, stride, 3 * 4);
-            gl.enableVertexAttribArray(ATTR_COLOR);
-            gl.vertexAttribPointer(ATTR_COLOR, 4, 5126, false, stride, 5 * 4);
-            gl.enableVertexAttribArray(ATTR_NORMAL);
-            gl.vertexAttribPointer(ATTR_NORMAL, 3, 5126, false, stride, 9 * 4);
+            if (colorFromState) {
+                gl.disableVertexAttribArray(ATTR_COLOR);
+            } else {
+                gl.enableVertexAttribArray(ATTR_COLOR);
+                gl.vertexAttribPointer(ATTR_COLOR, 4, 5126, false, stride, 5 * 4);
+            }
+            if (normalFromState) {
+                gl.disableVertexAttribArray(ATTR_NORMAL);
+            } else {
+                gl.enableVertexAttribArray(ATTR_NORMAL);
+                gl.vertexAttribPointer(ATTR_NORMAL, 3, 5126, false, stride, 9 * 4);
+            }
             gl.bindVertexArray(null);
             s.currentVao = null;
             // Вернуть привязку ARRAY_BUFFER, которую ожидает immediate-путь.
@@ -464,6 +486,8 @@ final class GLBridge {
         public void run() {
             if (vao == null || vertexCount == 0) return;
             useVao(s, vao);
+            if (colorFromState) s.gl.vertexAttrib4f(ATTR_COLOR, s.r, s.g, s.b, s.a);
+            if (normalFromState) s.gl.vertexAttrib4f(ATTR_NORMAL, s.nx, s.ny, s.nz, 1f);
             applyUniforms(s);
             s.gl.drawArrays(mode, 0, vertexCount);
         }

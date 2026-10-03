@@ -68,6 +68,7 @@ public final class ResourcePreloader {
      * отдельных файлов логируются и пропускаются — не блокируют остальные).
      */
     public static void preloadAll(OnComplete onComplete) {
+        TexturePackStore.install();   // колбэки для web/texturepacks.js (zip-паки)
         ResourceReadyCallback onResource = ResourceCache::put;
         TextResourceReadyCallback onText = ResourceCache::putText;
         JsCallback onDone = onComplete::done;
@@ -114,7 +115,14 @@ public final class ResourcePreloader {
         "  var total = entries.length;" +
         "  var done = 0;" +
         "  function next() {" +
-        "    if (done >= total) { setProgress(1, 'Starting\u2026'); onDone(); return; }" +
+        "    if (done >= total) {" +
+        "      var tp = window.TexturePacks;" +
+        "      setProgress(1, 'Loading texture packs\u2026');" +
+        "      (tp && tp.loadSaved ? tp.loadSaved() : Promise.resolve()).catch(function(e) {" +
+        "        console.warn('Saved texture packs failed to load:', e);" +
+        "      }).then(function() { setProgress(1, 'Starting\u2026'); onDone(); });" +
+        "      return;" +
+        "    }" +
         "    var entry = entries[done];" +
         "    var isText = entry.name.toLowerCase().endsWith('.txt');" +
         "    var step = isText" +

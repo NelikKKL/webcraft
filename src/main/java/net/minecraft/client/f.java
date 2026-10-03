@@ -762,14 +762,26 @@ implements jv {
         Collections.sort(this.m, new ho(eb2));
         int n2 = this.m.size() - 1;
         int n3 = this.m.size();
+        // PERF: считаем реально пересобранные секции (compiled), а не просто
+        // обойдённые, + лимит по времени, чтобы массовая пересборка после
+        // подгрузки чанков не давала фриз. Первая секция всегда собирается.
+        int compiled = 0;
+        long start = bl2 ? 0L : System.nanoTime();
         for (int i2 = 0; i2 < n3; ++i2) {
             bw bw2 = (bw)this.m.get(n2 - i2);
             if (!bl2) {
-                if (bw2.a(eb2) > 1024.0f && (bw2.o ? i2 >= 3 : i2 >= 1)) {
+                if (bw2.a(eb2) > 1024.0f && (bw2.o ? compiled >= 3 : compiled >= 1)) {
                     return false;
+                }
+                if (compiled >= 1 && System.nanoTime() - start > 8000000L) {
+                    return false;
+                }
+                if (!bw2.chunksReady()) {
+                    continue;
                 }
             } else if (!bw2.o) continue;
             bw2.a();
+            ++compiled;
             this.m.remove(bw2);
             bw2.u = false;
         }

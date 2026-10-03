@@ -490,7 +490,15 @@ implements Runnable {
             this.A.a(this.g, this.P.c);
             GL11.glEnable(3553);
             if (this.e != null && !this.e.z) {
-                while (this.e.g()) {
+                // PERF: очередь обновления света (после генерации чанков бывает
+                // тысячи записей) обрабатывалась до пустоты за один кадр —
+                // фриз. Теперь порциями по 500 и не дольше ~5 мс на кадр;
+                // остаток доедается в следующих кадрах.
+                long lightDeadline = System.nanoTime() + 5000000L;
+                while (this.e.g(500)) {
+                    if (System.nanoTime() >= lightDeadline) {
+                        break;
+                    }
                 }
             }
             if (this.e != null && this.e.z) {
@@ -951,6 +959,8 @@ implements Runnable {
                     this.ab = 0;
                     this.e.f(this.g);
                 }
+                // PERF: догружаем по одному чанку за тик (см. Session.pumpChunkQueue).
+                this.e.pumpChunkQueue(TrigLookup.b(this.g.aw / 16.0), TrigLookup.b(this.g.ay / 16.0));
             }
             this.e.k = this.y.x;
             if (this.e.z) {

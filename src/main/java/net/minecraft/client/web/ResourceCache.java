@@ -30,6 +30,35 @@ public final class ResourceCache {
     }
 
     private static final Map<String, Entry> cache = new HashMap<>();
+
+    /**
+     * Оверлей активного текстур-пака: пути, которые есть в паке, перекрывают
+     * встроенные ресурсы; всё остальное берётся из базового кэша (как в
+     * оригинале — пак может заменять только часть файлов). null = пак по умолчанию.
+     */
+    private static Map<String, Entry> overlay = null;
+
+    public static void setOverlay(Map<String, Entry> map) {
+        overlay = map;
+    }
+
+    /** Фабрика записи для TexturePackStore (конструктор Entry package-private). */
+    static Entry makeEntry(int width, int height, Uint8Array rgba) {
+        int[] argb = new int[width * height];
+        for (int i = 0; i < argb.length; i++) {
+            int base = i * 4;
+            int r = rgba.get(base) & 0xFF;
+            int g = rgba.get(base + 1) & 0xFF;
+            int b = rgba.get(base + 2) & 0xFF;
+            int a = rgba.get(base + 3) & 0xFF;
+            argb[i] = (a << 24) | (r << 16) | (g << 8) | b;
+        }
+        return new Entry(width, height, argb);
+    }
+
+    static String normalizePath(String path) {
+        return normalize(path);
+    }
     private static final Map<String, String> textCache = new HashMap<>();
 
     /**
@@ -58,7 +87,12 @@ public final class ResourceCache {
 
     /** Возвращает запись по пути ресурса (тот же формат, что передаётся в getResource/getResourceAsStream) либо null, если ресурс не был прелоаднут/не найден. */
     public static Entry get(String path) {
-        return cache.get(normalize(path));
+        String key = normalize(path);
+        if (overlay != null) {
+            Entry e = overlay.get(key);
+            if (e != null) return e;
+        }
+        return cache.get(key);
     }
 
     /** Текстовое содержимое ресурса (см. putText) либо null, если не был прелоаднут/не найден. */
@@ -67,7 +101,8 @@ public final class ResourceCache {
     }
 
     public static boolean has(String path) {
-        return cache.containsKey(normalize(path));
+        String key = normalize(path);
+        return (overlay != null && overlay.containsKey(key)) || cache.containsKey(key);
     }
 
     /** decomp обращается то с ведущим слэшем, то без — нормализуем к единому виду (без ведущего слэша), как это делает Class.getResource(String) при разрешении relative/absolute путей. */

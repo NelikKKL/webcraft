@@ -165,6 +165,34 @@ public class bw {
         this.E = true;
     }
 
+    /**
+     * PERF: меш секции читает блоки в области [-1..+1] вокруг неё (cs), а это
+     * синхронно ГЕНЕРИРУЕТ все ещё не созданные чанки прямо внутри сборки меша.
+     * Если какого-то чанка нет — не собираем меш сейчас, а ставим чанк в
+     * очередь потоковой подгрузки (по одному за тик); секция остаётся в списке
+     * "грязных" и соберётся, когда всё будет готово.
+     */
+    public boolean chunksReady() {
+        Session world = this.a;
+        if (world == null) {
+            return true;
+        }
+        boolean ready = true;
+        int x0 = (this.c - 1) >> 4;
+        int x1 = (this.c + this.f + 1) >> 4;
+        int z0 = (this.e - 1) >> 4;
+        int z1 = (this.e + this.h + 1) >> 4;
+        for (int cx = x0; cx <= x1; ++cx) {
+            for (int cz = z0; cz <= z1; ++cz) {
+                if (!world.isChunkLoaded(cx, cz)) {
+                    world.requestChunk(cx, cz);
+                    ready = false;
+                }
+            }
+        }
+        return ready;
+    }
+
     public float a(lw lw2) {
         float f2 = (float)(lw2.aw - (double)this.q);
         float f3 = (float)(lw2.ax - (double)this.r);

@@ -1307,12 +1307,22 @@ implements pk {
      * WARNING - Removed try catching itself - possible behaviour change.
      */
     public boolean g() {
+        return this.g(5000);
+    }
+
+    /**
+     * PERF: то же, что g(), но с настраиваемым числом обновлений света за
+     * вызов (по умолчанию 5000 — один вызов мог занять десятки мс в JS).
+     * Minecraft.runOneFrame вызывает это маленькими порциями с лимитом по
+     * времени, чтобы очередь света после генерации чанков не вешала кадр.
+     */
+    public boolean g(int maxUpdates) {
         if (this.J >= 50) {
             return false;
         }
         ++this.J;
         try {
-            int n2 = 5000;
+            int n2 = maxUpdates;
             while (this.A.size() > 0) {
                 if (--n2 <= 0) {
                     boolean bl2 = true;
@@ -1730,13 +1740,67 @@ implements pk {
         this.e = l2;
     }
 
+    // ---------------------------------------------------------------
+    // PERF: потоковая подгрузка чанков. Раньше f(lw) раз в 30 тиков синхронно
+    // грузил/генерировал весь квадрат 5x5 вокруг игрока (шум + пещеры +
+    // декорации соседей) — отсюда фризы при пересечении границы чанка.
+    // Теперь ближайшие чанки (радиус 1) грузятся сразу, как и раньше, а
+    // дальнее кольцо ставится в очередь и догружается по одному чанку за тик
+    // (pumpChunkQueue). Туда же попадают чанки, нужные мешу секции рендера
+    // (см. requestChunk / bw.chunksReady).
+    // ---------------------------------------------------------------
+    private final java.util.ArrayList<int[]> chunkQueue = new java.util.ArrayList<int[]>();
+    private final java.util.HashSet<Long> chunkQueued = new java.util.HashSet<Long>();
+
+    public boolean isChunkLoaded(int cx, int cz) {
+        return this.g(cx, cz);
+    }
+
+    /** Поставить чанк в очередь генерации (если он ещё не загружен и не в очереди). */
+    public void requestChunk(int cx, int cz) {
+        if (this.g(cx, cz)) {
+            return;
+        }
+        long key = ((long)cx << 32) ^ ((long)cz & 0xFFFFFFFFL);
+        if (this.chunkQueued.add(Long.valueOf(key))) {
+            this.chunkQueue.add(new int[]{cx, cz});
+        }
+    }
+
+    /** Грузит не более одного чанка из очереди — ближайшего к (px, pz) в координатах чанков. */
+    public void pumpChunkQueue(int pcx, int pcz) {
+        int n = this.chunkQueue.size();
+        if (n == 0) {
+            return;
+        }
+        int best = -1;
+        long bestD = Long.MAX_VALUE;
+        for (int i = 0; i < n; ++i) {
+            int[] c = this.chunkQueue.get(i);
+            long dx = c[0] - pcx;
+            long dz = c[1] - pcz;
+            long d = dx * dx + dz * dz;
+            if (d < bestD) {
+                bestD = d;
+                best = i;
+            }
+        }
+        int[] c = this.chunkQueue.remove(best);
+        this.chunkQueued.remove(Long.valueOf(((long)c[0] << 32) ^ ((long)c[1] & 0xFFFFFFFFL)));
+        this.c(c[0], c[1]);
+    }
+
     public void f(lw lw2) {
         int n2 = TrigLookup.b(lw2.aw / 16.0);
         int n3 = TrigLookup.b(lw2.ay / 16.0);
         int n4 = 2;
         for (int i2 = n2 - n4; i2 <= n2 + n4; ++i2) {
             for (int i3 = n3 - n4; i3 <= n3 + n4; ++i3) {
-                this.c(i2, i3);
+                if (i2 >= n2 - 1 && i2 <= n2 + 1 && i3 >= n3 - 1 && i3 <= n3 + 1) {
+                    this.c(i2, i3);
+                } else {
+                    this.requestChunk(i2, i3);
+                }
             }
         }
         if (!this.b.contains(lw2)) {

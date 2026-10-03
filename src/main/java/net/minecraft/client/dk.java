@@ -31,8 +31,10 @@ extends bp {
 
     @Override
     public void a() {
-        this.e.add(new r(5, this.c / 2 - 154, this.d - 48, "Open texture pack folder"));
-        this.e.add(new r(6, this.c / 2 + 4, this.d - 48, "Done"));
+        // ПАТЧЕНО (web): вместо открытия папки — добавление zip через файловый диалог.
+        this.e.add(new gh(5, this.c / 2 - 154, this.d - 48, 100, 20, "Add pack..."));
+        this.e.add(new gh(7, this.c / 2 - 50, this.d - 48, 100, 20, "Remove pack"));
+        this.e.add(new gh(6, this.c / 2 + 54, this.d - 48, 100, 20, "Done"));
         this.b.C.a();
         this.p = new File(this.b.D, "texturepacks").getAbsolutePath();
         this.i = 32;
@@ -47,7 +49,15 @@ extends bp {
             return;
         }
         if (gh2.f == 5) {
-            Sys.openURL((String)("file://" + this.p));
+            net.minecraft.client.web.TexturePackStore.openFilePicker();
+        }
+        if (gh2.f == 7) {
+            d cur = this.b.C.a;
+            if (cur instanceof net.minecraft.client.web.WebTexturePack) {
+                // Удаляем выбранный пак; ff.a() переключит на Default и перезагрузит текстуры.
+                net.minecraft.client.web.TexturePackStore.remove((net.minecraft.client.web.WebTexturePack)cur);
+                this.b.C.a();
+            }
         }
         if (gh2.f == 6) {
             this.b.n.b();
@@ -188,7 +198,7 @@ extends bp {
         GL11.glEnable(3008);
         GL11.glDisable(3042);
         this.a(this.g, "Select Texture Pack", this.c / 2, 16, 0xFFFFFF);
-        this.a(this.g, "(Place texture pack files here)", this.c / 2 - 77, this.d - 26, 0x808080);
+        this.a(this.g, "(Add a .zip, or drop it onto the window)", this.c / 2 - 77, this.d - 26, 0x808080);
         super.a(n2, n3, f2);
     }
 
