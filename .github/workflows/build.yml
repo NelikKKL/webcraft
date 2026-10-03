@@ -95,6 +95,14 @@ jobs:
           if executions is None:
               executions = ET.SubElement(teavm, f"{ns}executions")
 
+          # JS уже собран шагом 1 (TeaVM 0.10.2). Во временном POM оставляем
+          # только Wasm-execution: иначе JS компилируется второй раз на 0.11.0,
+          # а параметр <obfuscated> в 0.11 вообще не существует (WARNING в логе).
+          for ex in list(executions.findall(f"{ns}execution")):
+              ex_id = ex.find(f"{ns}id")
+              if ex_id is not None and ex_id.text != "wasm-client-ci":
+                  executions.remove(ex)
+
           def add_execution(execution_id, goal, phase, config_values):
               execution = ET.SubElement(executions, f"{ns}execution")
               ET.SubElement(execution, f"{ns}id").text = execution_id
@@ -122,15 +130,8 @@ jobs:
               },
           )
 
-          # TeaVM 0.11.x provides this Maven goal for the companion runtime.
-          add_execution(
-              "wasm-runtime-ci",
-              "copy-webassembly-gc-runtime",
-              "process-classes",
-              {
-                  "targetDirectory": "${project.build.directory}/generated/wasm",
-              },
-          )
+          # Companion runtime (alpha126.wasm-runtime.js) создаёт сам goal `compile`
+          # рядом с .wasm — отдельный goal для его копирования не нужен.
 
           ET.register_namespace("", "http://maven.apache.org/POM/4.0.0")
           tree.write(dst, encoding="UTF-8", xml_declaration=True)
@@ -143,10 +144,10 @@ jobs:
       - name: Verify WebAssembly output
         continue-on-error: true
         run: |
-          test -s target/generated/wasm/alpha126.wasm
-
           echo "Wasm output:"
           ls -lh target/generated/wasm/
+
+          test -s target/generated/wasm/alpha126.wasm
 
           runtime="$(find target/generated/wasm -maxdepth 1 -type f -name '*wasm-runtime.js' -print -quit)"
           test -n "$runtime"

@@ -282,3 +282,20 @@ getResource-связанные), все обнаружены третьим CI-�
 - `mq.java` — `ImageIO.read(httpURLConnection.getInputStream())` — загрузка
   скинов по сети (Mojang API) — требует CORS-совместимого прокси или
   альтернативного источника, не решается на уровне ImageIO-моста.
+
+## WASM-GC сборка (CI)
+
+Первый прогон Wasm в CI падал на двух неподдерживаемых в WEBASSEMBLY_GC вещах:
+`Thread.start()` (нужен `org.teavm.platform.Platform`) и `Thread.sleep()`
+(нужен `org.teavm.runtime.Fiber`). TeaVM показывает каждую такую ошибку один раз
+с одним примером стека, поэтому убраны ВСЕ достижимые места:
+
+- `Minecraft.java` — `Thread.sleep(1000L)` после смены полноэкранного режима;
+- `og.java` — подключение к серверу идёт на главном потоке в первом тике экрана;
+- `cl.java` — поток загрузки скина не запускается (в вебе и так не работал);
+- `jq.java` — не запускаются сетевые потоки и сторож `pe`, убран `Thread.sleep(10L)`;
+- `pe.java` — убран `Thread.sleep(5000L)`.
+
+Workflow: временный POM содержит только Wasm-execution, goal
+`copy-webassembly-gc-runtime` убран (runtime `alpha126.wasm-runtime.js` создаёт
+сам `compile`). Запуск Wasm-версии: `index.html?wasm`.
