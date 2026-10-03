@@ -9,8 +9,30 @@ package net.minecraft.client.web;
 final class Mat4 {
     private Mat4() {}
 
+    // PERF: раньше каждая операция (translate/scale/rotate/ortho/frustum)
+    // выделяла 2-3 новых float[16] — тысячи мусорных массивов в кадр при
+    // проигрывании display list'ов чанков (push+translate*3+scale+pop на
+    // каждый чанк) и, как следствие, фризы от GC. Теперь используем два
+    // статических временных массива (JS однопоточный, повторный вход
+    // невозможен). Арифметика НЕ менялась — результаты побитово те же.
+    private static final float[] TMP = new float[16];
+    private static final float[] OP = new float[16];
+
+    private static float[] opIdentity() {
+        float[] o = OP;
+        for (int i = 0; i < 16; i++) o[i] = 0f;
+        o[0] = o[5] = o[10] = o[15] = 1f;
+        return o;
+    }
+
+    private static float[] opZero() {
+        float[] o = OP;
+        for (int i = 0; i < 16; i++) o[i] = 0f;
+        return o;
+    }
+
     static void multiply(float[] m, float[] rhs) {
-        float[] result = new float[16];
+        float[] result = TMP;
         for (int col = 0; col < 4; col++) {
             for (int row = 0; row < 4; row++) {
                 float sum = 0;
@@ -23,16 +45,22 @@ final class Mat4 {
         System.arraycopy(result, 0, m, 0, 16);
     }
 
+    // Специализированные translate/scale: тот же порядок сложения, что и в
+    // общем multiply() (нулевые слагаемые не меняют конечный результат), но
+    // без 64 умножений на вызов.
     static void translate(float[] m, float x, float y, float z) {
-        float[] t = identity();
-        t[12] = x; t[13] = y; t[14] = z;
-        multiply(m, t);
+        for (int row = 0; row < 4; row++) {
+            m[12 + row] = m[row] * x + m[4 + row] * y + m[8 + row] * z + m[12 + row];
+        }
     }
 
     static void scale(float[] m, float x, float y, float z) {
-        float[] s = identity();
-        s[0] = x; s[5] = y; s[10] = z;
-        multiply(m, s);
+        for (int row = 0; row < 4; row++) {
+            // "+ 0f" воспроизводит знак нуля общего multiply() (0 + (-0) = +0).
+            m[row] = m[row] * x + 0f;
+            m[4 + row] = m[4 + row] * y + 0f;
+            m[8 + row] = m[8 + row] * z + 0f;
+        }
     }
 
     static void rotate(float[] m, float angleDeg, float x, float y, float z) {
@@ -44,7 +72,7 @@ final class Mat4 {
         x /= len; y /= len; z /= len;
         float t = 1 - c;
 
-        float[] r = identity();
+        float[] r = opIdentity();
         r[0] = t * x * x + c;
         r[1] = t * x * y + s * z;
         r[2] = t * x * z - s * y;
@@ -58,7 +86,7 @@ final class Mat4 {
     }
 
     static void ortho(float[] m, double left, double right, double bottom, double top, double near, double far) {
-        float[] o = new float[16];
+        float[] o = opZero();
         o[0] = (float) (2.0 / (right - left));
         o[5] = (float) (2.0 / (top - bottom));
         o[10] = (float) (-2.0 / (far - near));
@@ -70,7 +98,7 @@ final class Mat4 {
     }
 
     static void frustum(float[] m, double left, double right, double bottom, double top, double near, double far) {
-        float[] f = new float[16];
+        float[] f = opZero();
         f[0] = (float) (2 * near / (right - left));
         f[5] = (float) (2 * near / (top - bottom));
         f[8] = (float) ((right + left) / (right - left));

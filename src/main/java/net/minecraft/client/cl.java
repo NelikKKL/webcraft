@@ -11,11 +11,7 @@ public class cl {
     public boolean d = false;
 
     public cl(String string, ie ie2) {
-        // ИСПРАВЛЕНО (WASM-GC сборка): mq.start() запускал поток загрузки скина по
-        // HTTP. Thread.start() не поддерживается на WEBASSEMBLY_GC-таргете TeaVM, а
-        // в веб-порте эта загрузка и так не работала (CORS на minecraft.net,
-        // ImageIO.read поддерживает только ресурсы из ResourceIO). Результат тот же,
-        // что и при 404: this.a остаётся null и используется стандартный скин.
+        new mq(this, string, ie2).start();
     }
 }
 

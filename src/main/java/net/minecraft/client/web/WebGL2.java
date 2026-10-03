@@ -51,6 +51,7 @@ public interface WebGL2 extends JSObject {
     // --- Vertex Array Objects (WebGL2 native — заменяет client-side arrays GL1.1) ---
     @JSMethod WebGLVertexArrayObject createVertexArray();
     @JSMethod void bindVertexArray(WebGLVertexArrayObject vao);
+    @JSMethod void deleteVertexArray(WebGLVertexArrayObject vao);
     @JSMethod void enableVertexAttribArray(int index);
     @JSMethod void disableVertexAttribArray(int index);
     @JSMethod void vertexAttrib4f(int index, float x, float y, float z, float w);

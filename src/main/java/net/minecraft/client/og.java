@@ -9,26 +9,13 @@ extends bp {
     private ib a;
     private boolean h = false;
 
-    // ИСПРАВЛЕНО (WASM-GC сборка): oy.start() запускал поток подключения, а
-    // Thread.start() не поддерживается на WEBASSEMBLY_GC-таргете TeaVM
-    // ("Class org.teavm.platform.Platform is not supported on current target").
-    // Теперь подключение выполняется на главном потоке при первом тике экрана
-    // (после того как Minecraft.a(og) уже установил этот экран, иначе сообщение
-    // об ошибке из oy.run() было бы тут же затёрто экраном подключения).
-    private oy pendingConnect;
-
     public og(Minecraft minecraft, String string, int n2) {
         minecraft.a((Session)null);
-        this.pendingConnect = new oy(this, minecraft, string, n2);
+        new oy(this, minecraft, string, n2).start();
     }
 
     @Override
     public void g() {
-        if (this.pendingConnect != null) {
-            oy connect = this.pendingConnect;
-            this.pendingConnect = null;
-            connect.run();
-        }
         if (this.a != null) {
             this.a.a();
         }

@@ -13,6 +13,9 @@ import org.lwjgl.opengl.GL11;
 
 public class jm
 extends d {
+    private int e = -1;
+    private BufferedImage f;
+
     public jm() {
         this.a = "Default";
         this.b = "The default look of Minecraft";
@@ -30,4 +33,17 @@ extends d {
             minecraft.n.a(this.e);
         }
     }
+
+    @Override
+    public void c(Minecraft minecraft) {
+        if (this.f != null && this.e < 0) {
+            this.e = minecraft.n.a(this.f);
+        }
+        if (this.f != null) {
+            minecraft.n.b(this.e);
+        } else {
+            GL11.glBindTexture(3553, (int)minecraft.n.a("/gui/unknown_pack.png"));
+        }
+    }
 }
+

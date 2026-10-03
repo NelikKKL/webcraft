@@ -44,10 +44,8 @@ public class jq {
         this.h = new DataOutputStream(socket.getOutputStream());
         this.p = new pf(this, string + " read thread");
         this.o = new ph(this, string + " write thread");
-        // ИСПРАВЛЕНО (WASM-GC сборка): потоки чтения/записи сокета не запускаются —
-        // Thread.start() не поддерживается на WEBASSEMBLY_GC. В веб-порте сюда
-        // всё равно не попасть: netshim.Socket всегда бросает ConnectException
-        // раньше, чем создаётся jq (см. PATCHES.md).
+        this.p.start();
+        this.o.start();
     }
 
     /*
@@ -96,9 +94,11 @@ public class jq {
                     gk.a(gk2, this.h);
                     this.u = 50;
                 }
-                // ИСПРАВЛЕНО (WASM-GC сборка): здесь был Thread.sleep(10L) при пустой
-                // очереди (Fiber недоступен на WEBASSEMBLY_GC). Метод вызывался только
-                // из ph.run() — потока записи, который теперь не запускается.
+                if (bl2) {
+                    Thread.sleep(10L);
+                }
+            }
+            catch (InterruptedException interruptedException) {
             }
             catch (Exception exception) {
                 if (this.q) break block12;
@@ -135,8 +135,7 @@ public class jq {
         }
         this.q = true;
         this.r = string;
-        // ИСПРАВЛЕНО (WASM-GC сборка): pe — поток-«сторож» (через 5 с принудительно
-        // гасил сетевые потоки). Потоки не запускаются, сторож не нужен.
+        new pe(this).start();
         this.i = false;
         try {
             this.g.close();

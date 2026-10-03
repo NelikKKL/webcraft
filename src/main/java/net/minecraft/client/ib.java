@@ -328,13 +328,21 @@ extends mo {
         if (hw2.a.equals("-")) {
             this.a((gk)new iu(this.e.i.b, "Password", 6));
         } else {
-            // ИСПРАВЛЕНО (WASM-GC сборка): здесь был HTTP-запрос к
-            // minecraft.net/game/joinserver.jsp через URL.openStream(). Он использует
-            // XHRURLConnection -> org.teavm.runtime.Fiber, которого нет на
-            // WEBASSEMBLY_GC-таргете ("Class org.teavm.runtime.Fiber is not supported
-            // on current target"). Сервер авторизации Alpha давно не существует, а в
-            // веб-порте сюда не попасть: netshim.Socket бросает ConnectException раньше.
-            this.d.a("Failed to login: online servers are not supported in the web port");
+            try {
+                URL uRL = new URL("http://www.minecraft.net/game/joinserver.jsp?user=" + this.e.i.b + "&sessionId=" + this.e.i.c + "&serverId=" + hw2.a);
+                BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(uRL.openStream()));
+                String string = bufferedReader.readLine();
+                bufferedReader.close();
+                if (string.equalsIgnoreCase("ok")) {
+                    this.a((gk)new iu(this.e.i.b, "Password", 6));
+                } else {
+                    this.d.a("Failed to login: " + string);
+                }
+            }
+            catch (Exception exception) {
+                exception.printStackTrace();
+                this.d.a("Internal client error: " + exception.toString());
+            }
         }
     }
 

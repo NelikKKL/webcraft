@@ -86,15 +86,30 @@ final class GLBridge {
             case GL_ALPHA_TEST:
                 s.alphaTestEnabled = on;
                 return;
-            case GL_DEPTH_TEST:
-                if (on) s.gl.enable(cap); else s.gl.disable(cap);
+            case GL_DEPTH_TEST: {
+                int want = on ? 1 : 2;
+                if (s.stDepthTest != want) {
+                    s.stDepthTest = want;
+                    if (on) s.gl.enable(cap); else s.gl.disable(cap);
+                }
                 return;
-            case GL_BLEND:
-                if (on) s.gl.enable(cap); else s.gl.disable(cap);
+            }
+            case GL_BLEND: {
+                int want = on ? 1 : 2;
+                if (s.stBlend != want) {
+                    s.stBlend = want;
+                    if (on) s.gl.enable(cap); else s.gl.disable(cap);
+                }
                 return;
-            case GL_CULL_FACE:
-                if (on) s.gl.enable(cap); else s.gl.disable(cap);
+            }
+            case GL_CULL_FACE: {
+                int want = on ? 1 : 2;
+                if (s.stCull != want) {
+                    s.stCull = want;
+                    if (on) s.gl.enable(cap); else s.gl.disable(cap);
+                }
                 return;
+            }
             case GL_LIGHT0:
             case GL_LIGHT1:
             case GL_COLOR_MATERIAL:
@@ -111,6 +126,32 @@ final class GLBridge {
         }
     }
 
+
+    static void setDepthMask(GLState s, boolean flag) {
+        int want = flag ? 1 : 2;
+        if (s.stDepthMask == want) return;
+        s.stDepthMask = want;
+        s.gl.depthMask(flag);
+    }
+
+    static void setDepthFunc(GLState s, int func) {
+        if (s.stDepthFunc == func) return;
+        s.stDepthFunc = func;
+        s.gl.depthFunc(translateDepthFunc(func));
+    }
+
+    static void setCullFace(GLState s, int mode) {
+        if (s.stCullFace == mode) return;
+        s.stCullFace = mode;
+        s.gl.cullFace(translateCullFace(mode));
+    }
+
+    static void setBlendFunc(GLState s, int sf, int df) {
+        if (s.stBlendSrc == sf && s.stBlendDst == df) return;
+        s.stBlendSrc = sf;
+        s.stBlendDst = df;
+        s.gl.blendFunc(translateBlendFactor(sf), translateBlendFactor(df));
+    }
 
     static void clear(GLState s, int mask) {
         s.gl.clear(mask);
@@ -162,12 +203,20 @@ final class GLBridge {
     static void bindTexture(GLState s, int id) {
         WebGLTexture tex = id == 0 ? null : s.textures.get(id);
         s.boundTexture = tex;
-        s.gl.bindTexture(GL_TEXTURE_2D, tex);
+        if (!s.glTexValid || s.glTex != tex) {
+            s.gl.bindTexture(GL_TEXTURE_2D, tex);
+            s.glTex = tex;
+            s.glTexValid = true;
+        }
     }
 
     static void deleteTexture(GLState s, int id) {
         WebGLTexture tex = s.textures.remove(id);
-        if (tex != null) s.gl.deleteTexture(tex);
+        if (tex != null) {
+            s.gl.deleteTexture(tex);
+            // GL сам отвязывает удаляемую текстуру — кэш больше не доверяем.
+            if (s.glTex == tex) s.glTexValid = false;
+        }
     }
 
     /** Удаляет текстуры с ID, перечисленными в буфере от position() до limit() (как реальный LWJGL glDeleteTextures(IntBuffer)). */
@@ -208,13 +257,7 @@ final class GLBridge {
             bytes[i] = buffer.get(pos + i);
         }
         Uint8Array arr = Uint8ArrayFactory.create(len);
-        // ИСПРАВЛЕНО (WASM-GC сборка): arr.set(byte[], int) идёт через
-        // org.teavm.jso.impl.JS.arrayData, а он на WEBASSEMBLY_GC не поддерживается
-        // ("Method is not annotated with org.teavm.interop.Import"). Копируем
-        // поэлементно через индексатор Uint8Array — работает на обоих таргетах.
-        for (int i = 0; i < len; i++) {
-            arr.set(i, (short) (bytes[i] & 0xFF));
-        }
+        arr.set(bytes, 0);
         return arr;
     }
 
@@ -328,9 +371,14 @@ final class GLBridge {
      *     будет содержать данные совсем другого рисунка.
      */
     static float[] snapshotClientBuffers(GLState s, int first, int count) {
-        final int FLOATS_PER_VERTEX = 12; // 3 pos + 2 uv + 4 color + 3 normal
-        float[] interleaved = new float[count * FLOATS_PER_VERTEX];
+        float[] interleaved = new float[count * 12];
+        fillSnapshot(s, first, count, interleaved);
+        return interleaved;
+    }
 
+    /** Заполняет первые count*12 float'ов массива out (см. snapshotClientBuffers). */
+    static void fillSnapshot(GLState s, int first, int count, float[] interleaved) {
+        final int FLOATS_PER_VERTEX = 12; // 3 pos + 2 uv + 4 color + 3 normal
         for (int i = 0; i < count; i++) {
             int vtx = first + i;
             int base = i * FLOATS_PER_VERTEX;
@@ -340,7 +388,112 @@ final class GLBridge {
             readAttrColorDefault(s.attrs[ATTR_COLOR], vtx, interleaved, base + 5, s);
             readAttrNormalDefault(s.attrs[ATTR_NORMAL], vtx, interleaved, base + 9, s);
         }
-        return interleaved;
+    }
+
+    // ------------------------------------------------------------------
+    // PERF: запись display list'а с готовыми GPU-буферами.
+    //
+    // Раньше геометрия каждого чанка при КАЖДОМ glCallList (т.е. каждый
+    // кадр, для каждого видимого чанка) заново заливалась в scratch VBO
+    // через bufferData(new Float32Array(...)) + пересоздавались атрибуты
+    // и все uniform'ы. Теперь снимок заливается в собственный STATIC VBO
+    // ОДИН раз при записи, а при воспроизведении — bindVertexArray + draw.
+    // Картинка идентична: те же вершины, тот же порядок, те же шейдеры.
+    // GL_QUADS при записи разворачивается в треугольники (v0,v1,v2),(v0,v2,v3)
+    // — ровно то, что давал прежний TRIANGLE_FAN из 4 вершин.
+    // ------------------------------------------------------------------
+    static final class DrawRecord implements Runnable, GLState.Disposable {
+        private final GLState s;
+        private final int mode;
+        private final int vertexCount;
+        private WebGLBuffer vbo;
+        private WebGLVertexArrayObject vao;
+
+        DrawRecord(GLState s, int mode, float[] snap, int count) {
+            this.s = s;
+            float[] data = snap;
+            int n = count;
+            int drawMode = mode;
+            if (mode == 7 /* GL_QUADS */) {
+                int quads = count / 4;
+                n = quads * 6;
+                data = new float[n * 12];
+                int o = 0;
+                for (int q = 0; q < quads; q++) {
+                    int b = q * 4 * 12;
+                    o = copyVertex(snap, b, data, o);
+                    o = copyVertex(snap, b + 12, data, o);
+                    o = copyVertex(snap, b + 24, data, o);
+                    o = copyVertex(snap, b, data, o);
+                    o = copyVertex(snap, b + 24, data, o);
+                    o = copyVertex(snap, b + 36, data, o);
+                }
+                drawMode = 4; // GL_TRIANGLES
+            }
+            this.mode = drawMode;
+            this.vertexCount = n;
+
+            WebGL2 gl = s.gl;
+            vbo = gl.createBuffer();
+            gl.bindBuffer(ARRAY_BUFFER, vbo);
+            gl.bufferData(ARRAY_BUFFER, Float32ArrayFactory.wrap(data), 35044 /* STATIC_DRAW */);
+
+            vao = gl.createVertexArray();
+            gl.bindVertexArray(vao);
+            final int stride = 12 * 4;
+            gl.enableVertexAttribArray(ATTR_POSITION);
+            gl.vertexAttribPointer(ATTR_POSITION, 3, 5126, false, stride, 0);
+            gl.enableVertexAttribArray(ATTR_TEXCOORD);
+            gl.vertexAttribPointer(ATTR_TEXCOORD, 2, 5126, false, stride, 3 * 4);
+            gl.enableVertexAttribArray(ATTR_COLOR);
+            gl.vertexAttribPointer(ATTR_COLOR, 4, 5126, false, stride, 5 * 4);
+            gl.enableVertexAttribArray(ATTR_NORMAL);
+            gl.vertexAttribPointer(ATTR_NORMAL, 3, 5126, false, stride, 9 * 4);
+            gl.bindVertexArray(null);
+            s.currentVao = null;
+            // Вернуть привязку ARRAY_BUFFER, которую ожидает immediate-путь.
+            gl.bindBuffer(ARRAY_BUFFER, s.boundArrayBuffer);
+        }
+
+        private static int copyVertex(float[] src, int from, float[] dst, int to) {
+            for (int i = 0; i < 12; i++) dst[to + i] = src[from + i];
+            return to + 12;
+        }
+
+        @Override
+        public void run() {
+            if (vao == null || vertexCount == 0) return;
+            useVao(s, vao);
+            applyUniforms(s);
+            s.gl.drawArrays(mode, 0, vertexCount);
+        }
+
+        @Override
+        public void dispose() {
+            if (vao != null) {
+                if (s.currentVao == vao) {
+                    s.gl.bindVertexArray(null);
+                    s.currentVao = null;
+                }
+                s.gl.deleteVertexArray(vao);
+                vao = null;
+            }
+            if (vbo != null) {
+                s.gl.deleteBuffer(vbo);
+                vbo = null;
+            }
+        }
+    }
+
+    static Runnable createDrawRecord(GLState s, int mode, float[] snap, int count) {
+        return new DrawRecord(s, mode, snap, count);
+    }
+
+    static void useVao(GLState s, WebGLVertexArrayObject vao) {
+        if (s.currentVao != vao) {
+            s.gl.bindVertexArray(vao);
+            s.currentVao = vao;
+        }
     }
 
     /** Заливает уже готовый (замороженный на момент записи list'а) снимок вершин в scratch VBO и рисует. */
@@ -372,8 +525,23 @@ final class GLBridge {
 
     /** Собираем interleaved float-массив [pos3, uv2, color4, normal3] = 12 floats/vertex в scratch VBO. */
     private static void stageClientBuffers(GLState s, int first, int count) {
-        float[] interleaved = snapshotClientBuffers(s, first, count);
-        uploadScratch(s, interleaved);
+        int needed = count * 12;
+        int k = 8;                       // тир: 2^k float'ов, минимум 256
+        while ((1 << k) < needed) k++;
+        int idx = k - 8;
+        float[] tier = s.stageTier[idx];
+        if (tier == null) {
+            tier = new float[1 << k];
+            s.stageTier[idx] = tier;
+            s.stageTierJs[idx] = Float32ArrayFactory.wrap(tier);
+        }
+        fillSnapshot(s, first, count, tier);
+        Float32Array js = s.stageTierJs[idx];
+        js.set(tier, 0);
+        if (s.scratchVbo == null) s.scratchVbo = s.gl.createBuffer();
+        s.gl.bindBuffer(ARRAY_BUFFER, s.scratchVbo);
+        GLRaw.bufferDataPrefix(s.gl, ARRAY_BUFFER, js, needed, STREAM_DRAW);
+        s.boundArrayBuffer = s.scratchVbo;
         // После стейджинга все атрибуты читаются из scratch VBO по фиксированным офсетам.
         setStagedOffsets(s);
     }
@@ -475,6 +643,7 @@ final class GLBridge {
     }
 
     private static void bindVertexAttribs(GLState s) {
+        useVao(s, null);
         s.gl.bindBuffer(ARRAY_BUFFER, s.boundArrayBuffer);
         bindOne(s, ATTR_POSITION);
         bindOne(s, ATTR_TEXCOORD);
@@ -505,47 +674,101 @@ final class GLBridge {
         s.gl.vertexAttribPointer(attr, a.size, type, false, a.stride, (int) a.offset);
     }
 
+    private static boolean sameFloats(float[] a, float[] b, int n) {
+        for (int i = 0; i < n; i++) if (a[i] != b[i]) return false;
+        return true;
+    }
+
+    private static void uploadMatrix(GLState s, WebGLUniformLocation loc, float[] m) {
+        if (s.matBuf == null) s.matBuf = Float32ArrayFactory.wrap(new float[16]);
+        s.matBuf.set(m, 0);
+        s.gl.uniformMatrix4fv(loc, false, s.matBuf);
+    }
+
+    /**
+     * PERF: шлём в браузер только изменившиеся uniform'ы. Значения те же,
+     * что и раньше (см. комментарии про uColorMult ниже) — просто не
+     * повторяем то, что уже установлено у программы.
+     */
     private static void applyUniforms(GLState s) {
         Shaders sh = s.shaders;
-        s.gl.useProgram(sh.program);
-
-        Float32Array proj = Float32ArrayFactory.wrap(s.projection);
-        Float32Array mv = Float32ArrayFactory.wrap(s.modelview);
-        s.gl.uniformMatrix4fv(sh.uProjection, false, proj);
-        s.gl.uniformMatrix4fv(sh.uModelview, false, mv);
-
-        boolean useTexture = s.textureEnabled && s.boundTexture != null;
-        s.gl.uniform1i(sh.uUseTexture, useTexture ? 1 : 0);
-        if (useTexture) {
-            s.gl.activeTexture(33984 /* TEXTURE0 */);
-            s.gl.bindTexture(GL_TEXTURE_2D, s.boundTexture);
+        if (!s.programBound) {
+            s.gl.useProgram(sh.program);
+            s.programBound = true;
+        }
+        if (!s.staticUniformsSet) {
+            s.gl.activeTexture(33984 /* TEXTURE0 */);  // другие юниты не используются
             s.gl.uniform1i(sh.uTexture, 0);
+            // ИСПРАВЛЕНО (блоки становились прозрачными в меню паузы): текущий
+            // glColor уже попадает в шейдер через атрибут aColor (bindOne/
+            // readAttrColorDefault подставляют s.r/g/b/a, когда массив цветов
+            // выключен), а в fixed-function GL при включённом массиве цветов
+            // glColor вообще не применяется. Раньше шейдер ещё и умножал на
+            // uColorMult = текущий glColor: при проигрывании display list
+            // чанков там лежал "хвост" от GUI (градиент паузы с alpha < 1), и
+            // все блоки рисовались полупрозрачными. Множитель всегда единичный.
+            s.gl.uniform4f(sh.uColorMult, 1f, 1f, 1f, 1f);
+            s.staticUniformsSet = true;
         }
 
-        s.gl.uniform1i(sh.uUseLighting, s.lightingEnabled ? 1 : 0);
-        s.gl.uniform3f(sh.uLightDir0, s.lightPosition[0][0], s.lightPosition[0][1], s.lightPosition[0][2]);
-        s.gl.uniform3f(sh.uLightDir1, s.lightPosition[1][0], s.lightPosition[1][1], s.lightPosition[1][2]);
-        s.gl.uniform3f(sh.uLightColor0, s.lightDiffuse[0][0], s.lightDiffuse[0][1], s.lightDiffuse[0][2]);
-        s.gl.uniform3f(sh.uLightColor1, s.lightDiffuse[1][0], s.lightDiffuse[1][1], s.lightDiffuse[1][2]);
-        s.gl.uniform3f(sh.uAmbient, s.lightModelAmbient[0], s.lightModelAmbient[1], s.lightModelAmbient[2]);
+        if (!s.cProjValid || !sameFloats(s.cProj, s.projection, 16)) {
+            uploadMatrix(s, sh.uProjection, s.projection);
+            System.arraycopy(s.projection, 0, s.cProj, 0, 16);
+            s.cProjValid = true;
+        }
+        if (!s.cMvValid || !sameFloats(s.cMv, s.modelview, 16)) {
+            uploadMatrix(s, sh.uModelview, s.modelview);
+            System.arraycopy(s.modelview, 0, s.cMv, 0, 16);
+            s.cMvValid = true;
+        }
 
-        s.gl.uniform1i(sh.uUseFog, s.fogEnabled ? 1 : 0);
+        // Текстура уже привязана в bindTexture() (с кэшем) — повторный
+        // bindTexture на каждый draw не нужен.
+        int useTexture = (s.textureEnabled && s.boundTexture != null) ? 1 : 0;
+        if (s.cUseTex != useTexture) {
+            s.gl.uniform1i(sh.uUseTexture, useTexture);
+            s.cUseTex = useTexture;
+        }
+
+        int useLighting = s.lightingEnabled ? 1 : 0;
+        if (s.cUseLight != useLighting) {
+            s.gl.uniform1i(sh.uUseLighting, useLighting);
+            s.cUseLight = useLighting;
+        }
+        float[] L = s.tmpLight;
+        L[0] = s.lightPosition[0][0]; L[1] = s.lightPosition[0][1]; L[2] = s.lightPosition[0][2];
+        L[3] = s.lightPosition[1][0]; L[4] = s.lightPosition[1][1]; L[5] = s.lightPosition[1][2];
+        L[6] = s.lightDiffuse[0][0]; L[7] = s.lightDiffuse[0][1]; L[8] = s.lightDiffuse[0][2];
+        L[9] = s.lightDiffuse[1][0]; L[10] = s.lightDiffuse[1][1]; L[11] = s.lightDiffuse[1][2];
+        L[12] = s.lightModelAmbient[0]; L[13] = s.lightModelAmbient[1]; L[14] = s.lightModelAmbient[2];
+        if (!s.cLightValid || !sameFloats(s.cLight, L, 15)) {
+            s.gl.uniform3f(sh.uLightDir0, L[0], L[1], L[2]);
+            s.gl.uniform3f(sh.uLightDir1, L[3], L[4], L[5]);
+            s.gl.uniform3f(sh.uLightColor0, L[6], L[7], L[8]);
+            s.gl.uniform3f(sh.uLightColor1, L[9], L[10], L[11]);
+            s.gl.uniform3f(sh.uAmbient, L[12], L[13], L[14]);
+            System.arraycopy(L, 0, s.cLight, 0, 15);
+            s.cLightValid = true;
+        }
+
+        int useFog = s.fogEnabled ? 1 : 0;
+        if (s.cUseFog != useFog) {
+            s.gl.uniform1i(sh.uUseFog, useFog);
+            s.cUseFog = useFog;
+        }
         int fogModeIdx = s.fogMode == 2049 ? 1 : (s.fogMode == 9729 ? 2 : 0);
-        s.gl.uniform1i(sh.uFogMode, fogModeIdx);
-        s.gl.uniform1f(sh.uFogDensity, s.fogDensity);
-        s.gl.uniform1f(sh.uFogStart, s.fogStart);
-        s.gl.uniform1f(sh.uFogEnd, s.fogEnd);
-        s.gl.uniform4f(sh.uFogColor, s.fogColor[0], s.fogColor[1], s.fogColor[2], s.fogColor[3]);
-
-        // ИСПРАВЛЕНО (блоки становились прозрачными в меню паузы): текущий
-        // glColor уже попадает в шейдер через атрибут aColor (bindOne/
-        // readAttrColorDefault подставляют s.r/g/b/a, когда массив цветов
-        // выключен), а в fixed-function GL при включённом массиве цветов
-        // glColor вообще не применяется. Раньше шейдер ещё и умножал на
-        // uColorMult = текущий glColor: при проигрывании display list чанков
-        // там лежал "хвост" от GUI (градиент паузы с alpha < 1), и все блоки
-        // рисовались полупрозрачными. Множитель всегда единичный.
-        s.gl.uniform4f(sh.uColorMult, 1f, 1f, 1f, 1f);
+        float[] F = s.tmpFog;
+        F[0] = fogModeIdx; F[1] = s.fogDensity; F[2] = s.fogStart; F[3] = s.fogEnd;
+        F[4] = s.fogColor[0]; F[5] = s.fogColor[1]; F[6] = s.fogColor[2]; F[7] = s.fogColor[3];
+        if (!s.cFogValid || !sameFloats(s.cFog, F, 8)) {
+            s.gl.uniform1i(sh.uFogMode, fogModeIdx);
+            s.gl.uniform1f(sh.uFogDensity, s.fogDensity);
+            s.gl.uniform1f(sh.uFogStart, s.fogStart);
+            s.gl.uniform1f(sh.uFogEnd, s.fogEnd);
+            s.gl.uniform4f(sh.uFogColor, F[4], F[5], F[6], F[7]);
+            System.arraycopy(F, 0, s.cFog, 0, 8);
+            s.cFogValid = true;
+        }
     }
 
     // --- lighting / fog setters ---

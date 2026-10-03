@@ -226,6 +226,7 @@
     })();
   </script>
 
+  <script src="alpha126.js"></script>
   <script type="module">
     // ВАЖНО: alpha126.js — UMD-модуль. В браузерном контексте (нет AMD/
     // CommonJS) он делает `self.main = <точка входа>` — то есть просто
@@ -244,43 +245,14 @@
     // window.Akrile синхронно и должен видеть его уже полностью готовым.
     import Akrile from './akrile.js';
 
-    // Две сборки одной и той же игры:
-    //   index.html          — JS  (alpha126.js, TeaVM JS-таргет, основная);
-    //   index.html?wasm     — Wasm GC (wasm/alpha126.wasm + wasm-runtime.js);
-    //                         нужен браузер с WasmGC: Chrome/Edge 119+, Firefox 120+,
-    //                         Safari 18.2+.
-    const useWasm = new URLSearchParams(location.search).has('wasm');
-
-    function loadScript(src) {
-      return new Promise((resolve, reject) => {
-        const el = document.createElement('script');
-        el.src = src;
-        el.onload = () => resolve();
-        el.onerror = () => reject(new Error('Cannot load ' + src));
-        document.head.appendChild(el);
-      });
-    }
-
-    async function startGame() {
-      if (useWasm) {
-        await loadScript('wasm/alpha126.wasm-runtime.js');
-        const teavm = await TeaVM.wasm.load('wasm/alpha126.wasm');
-        teavm.main([]);
-      } else {
-        await loadScript('alpha126.js');
-        window.main();
-      }
-    }
-
     Akrile.ready
       .then(() => {
         window.Akrile = Akrile;
-        return startGame().catch((e) => {
-          window.__showCrashScreen(
-            'Failed to start' + (useWasm ? ' (Wasm GC)' : '') + ': ' +
-            (e && e.stack ? e.stack : String(e))
-          );
-        });
+        try {
+          window.main();
+        } catch (e) {
+          window.__showCrashScreen('Failed to start: ' + (e && e.stack ? e.stack : String(e)));
+        }
       })
       .catch((e) => {
         window.__showCrashScreen(

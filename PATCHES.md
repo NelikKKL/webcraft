@@ -3,6 +3,31 @@
 Каждое изменение здесь — осознанное и обосновано ниже. Цель: минимальные,
 точечные, легко проверяемые правки — НЕ переписывание игровой логики.
 
+## ПРОИЗВОДИТЕЛЬНОСТЬ (фризы/лаги) — визуал не менялся
+
+Все правки только в GL-шиме (`org.lwjgl.opengl.*`, `net.minecraft.client.web.*`) и `pom.xml`;
+decomp-код игры не тронут. Картинка идентична: те же вершины, те же шейдеры, те же матрицы.
+
+1. **Геометрия чанков кэшируется на GPU** (`GLBridge.DrawRecord`). Раньше при каждом
+   `glCallList` (каждый кадр, каждый видимый чанк) снимок вершин заново заливался через
+   `bufferData(new Float32Array(...))`. Теперь при записи list'а создаётся STATIC VBO + VAO,
+   при воспроизведении — `bindVertexArray` + `drawArrays`. `glNewList`/`glDeleteLists`
+   освобождают старые буферы (`GLState.Disposable`).
+2. **GL_QUADS в записанных list'ах** разворачиваются в треугольники (v0,v1,v2),(v0,v2,v3) —
+   то же, что давал TRIANGLE_FAN; вместо N draw call'ов на квады — один.
+3. **applyUniforms**: слать только изменившиеся uniform'ы; убраны 2x `new Float32Array` на
+   каждый draw, повторный `useProgram`/`activeTexture`/`bindTexture`.
+4. **Кэш GL-состояния**: enable/disable (depth/blend/cull), depthMask, depthFunc, blendFunc,
+   cullFace, bindTexture — не шлём в браузер вызовы, ничего не меняющие.
+5. **Immediate-режим** (GUI, руки, мобы, облака): переиспользуемые scratch-массивы по тирам
+   2^k вместо `new float[]` + `new ArrayBuffer` + `new Float32Array` на каждый draw.
+6. **Mat4/стек матриц без аллокаций** (было 2–3 `new float[16]` на каждый translate/rotate/
+   scale и `clone()` на каждый push). Проверено побитово против старой реализации.
+7. **Display lists**: массив по id вместо `HashMap<Integer,...>` (боксинг на каждый вызов).
+8. **`glGetError` отключён** (`GLDispatch.DEBUG_GL_ERRORS=false`): `Minecraft.c(String)` звал
+   его 2 раза за кадр, а в браузере это синхронный round-trip к GPU-процессу.
+9. **`pom.xml`**: TeaVM `optimizationLevel` SIMPLE -> ADVANCED.
+
 ## ВРЕМЕННАЯ ДИАГНОСТИКА (убрать после использования!)
 
 Добавлена для разбора "не видно кнопок в меню" (см. TODO.md за полным
@@ -282,20 +307,3 @@ getResource-связанные), все обнаружены третьим CI-�
 - `mq.java` — `ImageIO.read(httpURLConnection.getInputStream())` — загрузка
   скинов по сети (Mojang API) — требует CORS-совместимого прокси или
   альтернативного источника, не решается на уровне ImageIO-моста.
-
-## WASM-GC сборка (CI)
-
-Первый прогон Wasm в CI падал на двух неподдерживаемых в WEBASSEMBLY_GC вещах:
-`Thread.start()` (нужен `org.teavm.platform.Platform`) и `Thread.sleep()`
-(нужен `org.teavm.runtime.Fiber`). TeaVM показывает каждую такую ошибку один раз
-с одним примером стека, поэтому убраны ВСЕ достижимые места:
-
-- `Minecraft.java` — `Thread.sleep(1000L)` после смены полноэкранного режима;
-- `og.java` — подключение к серверу идёт на главном потоке в первом тике экрана;
-- `cl.java` — поток загрузки скина не запускается (в вебе и так не работал);
-- `jq.java` — не запускаются сетевые потоки и сторож `pe`, убран `Thread.sleep(10L)`;
-- `pe.java` — убран `Thread.sleep(5000L)`.
-
-Workflow: временный POM содержит только Wasm-execution, goal
-`copy-webassembly-gc-runtime` убран (runtime `alpha126.wasm-runtime.js` создаёт
-сам `compile`). Запуск Wasm-версии: `index.html?wasm`.

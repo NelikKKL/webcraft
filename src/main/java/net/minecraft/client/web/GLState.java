@@ -1,9 +1,9 @@
 package net.minecraft.client.web;
 
 import java.nio.Buffer;
-import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Map;
+import org.teavm.jso.typedarrays.Float32Array;
 
 /**
  * Эмуляция fixed-function OpenGL 1.1 (immediate mode, матричный стек,
@@ -59,7 +59,12 @@ public final class GLState {
     private int currentMatrixMode = MODELVIEW;
     public final float[] projection = new float[16];
     public final float[] modelview = new float[16];
-    final ArrayDeque<float[]> matrixStack = new ArrayDeque<>();
+    // PERF: стек матриц на заранее выделенных массивах — раньше каждый
+    // glPushMatrix делал current().clone() (новый float[16]) + ArrayDeque.
+    // Семантика прежняя: один общий стек для обоих режимов матрицы, pop
+    // восстанавливает в ТЕКУЩУЮ матрицу, лишний pop — no-op.
+    private float[][] matrixStack = new float[64][16];
+    private int matrixSp = 0;
 
     public void matrixMode(int mode) {
         this.currentMatrixMode = mode;
@@ -79,13 +84,18 @@ public final class GLState {
     }
 
     public void pushMatrix() {
-        matrixStack.push(current().clone());
+        if (matrixSp == matrixStack.length) {
+            float[][] bigger = new float[matrixStack.length * 2][];
+            System.arraycopy(matrixStack, 0, bigger, 0, matrixSp);
+            for (int i = matrixSp; i < bigger.length; i++) bigger[i] = new float[16];
+            matrixStack = bigger;
+        }
+        System.arraycopy(current(), 0, matrixStack[matrixSp++], 0, 16);
     }
 
     public void popMatrix() {
-        float[] top = matrixStack.isEmpty() ? null : matrixStack.pop();
-        if (top != null) {
-            System.arraycopy(top, 0, current(), 0, 16);
+        if (matrixSp > 0) {
+            System.arraycopy(matrixStack[--matrixSp], 0, current(), 0, 16);
         }
     }
 
@@ -113,22 +123,65 @@ public final class GLState {
     // Display lists
     // ---------------------------------------------------------------
 
-    private final Map<Integer, java.util.List<Runnable>> displayLists = new HashMap<>();
+    /**
+     * Запись display list'а, владеющая GPU-ресурсами (VBO/VAO). Освобождается,
+     * когда list перезаписывается (glNewList) или удаляется (glDeleteLists).
+     */
+    public interface Disposable {
+        void dispose();
+    }
+
+    // PERF: таблица list'ов индексируется id напрямую (id выдаются подряд
+    // счётчиком) — вместо HashMap<Integer,...> с боксингом на каждый
+    // glCallList (а их сотни за кадр: по одному на каждый видимый чанк).
+    private java.util.ArrayList<Runnable>[] listTable = newTable(1024);
     private int nextListId = 1;
     private java.util.List<Runnable> recording = null;
     private int recordingId = -1;
 
+    @SuppressWarnings("unchecked")
+    private static java.util.ArrayList<Runnable>[] newTable(int n) {
+        return (java.util.ArrayList<Runnable>[]) new java.util.ArrayList[n];
+    }
+
+    private void ensureTable(int id) {
+        if (id < listTable.length) return;
+        int n = listTable.length;
+        while (n <= id) n *= 2;
+        java.util.ArrayList<Runnable>[] bigger = newTable(n);
+        System.arraycopy(listTable, 0, bigger, 0, listTable.length);
+        listTable = bigger;
+    }
+
+    private static void disposeAll(java.util.List<Runnable> list) {
+        for (int i = 0, n = list.size(); i < n; i++) {
+            Runnable r = list.get(i);
+            if (r instanceof Disposable) ((Disposable) r).dispose();
+        }
+    }
+
     public int genLists(int count) {
         int base = nextListId;
+        ensureTable(base + count);
         for (int i = 0; i < count; i++) {
-            displayLists.put(nextListId++, new java.util.ArrayList<>());
+            listTable[nextListId++] = new java.util.ArrayList<>();
         }
         return base;
     }
 
     public void newList(int id, int mode) {
-        recording = displayLists.computeIfAbsent(id, k -> new java.util.ArrayList<>());
-        recording.clear();
+        ensureTable(id);
+        java.util.ArrayList<Runnable> l = listTable[id];
+        if (l == null) {
+            l = new java.util.ArrayList<>();
+            listTable[id] = l;
+        } else {
+            // PERF/утечка: старые GPU-буферы перезаписываемого list'а (чанк
+            // перестраивается постоянно) нужно освободить.
+            disposeAll(l);
+            l.clear();
+        }
+        recording = l;
         recordingId = id;
         // mode == GL_COMPILE_AND_EXECUTE (4098) должен и исполнять сразу —
         // не встречается в decomp-коде для миров, поэтому не реализуем;
@@ -141,14 +194,23 @@ public final class GLState {
     }
 
     public void callList(int id) {
-        java.util.List<Runnable> list = displayLists.get(id);
+        if (id < 0 || id >= listTable.length) return;
+        java.util.ArrayList<Runnable> list = listTable[id];
         if (list != null) {
-            for (Runnable r : list) r.run();
+            for (int i = 0, n = list.size(); i < n; i++) list.get(i).run();
         }
     }
 
     public void deleteLists(int id, int count) {
-        for (int i = 0; i < count; i++) displayLists.remove(id + i);
+        for (int i = 0; i < count; i++) {
+            int k = id + i;
+            if (k < 0 || k >= listTable.length) continue;
+            java.util.ArrayList<Runnable> l = listTable[k];
+            if (l != null) {
+                disposeAll(l);
+                listTable[k] = null;
+            }
+        }
     }
 
     /** true если сейчас идёт запись display list — вызовы нужно буферизовать, а не исполнять. */
@@ -226,6 +288,42 @@ public final class GLState {
         public int stride;
         public boolean isByte;        // true для ATTR_COLOR/ATTR_NORMAL client-side (ByteBuffer, нормализованные)
     }
+
+    // ---------------------------------------------------------------
+    // PERF: кэши реального GL-состояния. Всё GL-состояние меняем только мы,
+    // поэтому можно не слать в браузер вызовы, которые ничего не меняют
+    // (раньше каждый draw call слал ~25 uniform-вызовов + 2 new Float32Array).
+    // 0 = неизвестно (первый вызов всегда проходит).
+    // ---------------------------------------------------------------
+    public int stDepthTest, stBlend, stCull;            // 0 unknown, 1 on, 2 off
+    public int stDepthMask;                             // 0 unknown, 1 true, 2 false
+    public int stBlendSrc = -1, stBlendDst = -1, stDepthFunc = -1, stCullFace = -1;
+
+    public WebGLTexture glTex = null;       // что реально привязано к TEXTURE_2D
+    public boolean glTexValid = false;
+
+    public boolean programBound = false;
+    public boolean staticUniformsSet = false;
+    public final float[] cProj = new float[16];
+    public final float[] cMv = new float[16];
+    public boolean cProjValid = false, cMvValid = false;
+    public int cUseTex = -1, cUseLight = -1, cUseFog = -1;
+    public final float[] cLight = new float[15];
+    public boolean cLightValid = false;
+    public final float[] cFog = new float[8];
+    public boolean cFogValid = false;
+    public final float[] tmpLight = new float[15];
+    public final float[] tmpFog = new float[8];
+    public Float32Array matBuf = null;       // переиспользуемый Float32Array(16)
+
+    /** Какой VAO сейчас привязан (null = дефолтный, для immediate-режима). */
+    public WebGLVertexArrayObject currentVao = null;
+
+    // Тиры scratch-буферов для immediate-режима (GUI, руки, мобы, облака…):
+    // размер 2^k float'ов, k = 8..24. Раньше на каждый draw выделялись новые
+    // float[] + ArrayBuffer + Float32Array.
+    public final float[][] stageTier = new float[17][];
+    public final Float32Array[] stageTierJs = new Float32Array[17];
 
     public final AttrState[] attrs = { new AttrState(), new AttrState(), new AttrState(), new AttrState() };
 

@@ -784,10 +784,7 @@ implements Runnable {
             this.f();
             Display.setFullscreen((boolean)this.a);
             Display.update();
-            // ИСПРАВЛЕНО (WASM-GC сборка): Thread.sleep(1000L) требует
-            // org.teavm.runtime.Fiber, которого нет на WEBASSEMBLY_GC-таргете
-            // ("Class org.teavm.runtime.Fiber is not supported on current target").
-            // Пауза в оригинале нужна была только драйверу LWJGL после смены режима.
+            Thread.sleep(1000L);
             if (this.a) {
                 this.e();
             }

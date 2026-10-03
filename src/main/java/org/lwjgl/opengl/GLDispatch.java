@@ -101,19 +101,19 @@ final class GLDispatch {
     }
 
     static void depthFunc(int func) {
-        maybeRecord(() -> s().gl.depthFunc(GLBridge.translateDepthFunc(func)));
+        maybeRecord(() -> GLBridge.setDepthFunc(s(), func));
     }
 
     static void depthMask(boolean flag) {
-        maybeRecord(() -> s().gl.depthMask(flag));
+        maybeRecord(() -> GLBridge.setDepthMask(s(), flag));
     }
 
     static void cullFace(int mode) {
-        maybeRecord(() -> s().gl.cullFace(GLBridge.translateCullFace(mode)));
+        maybeRecord(() -> GLBridge.setCullFace(s(), mode));
     }
 
     static void blendFunc(int sfactor, int dfactor) {
-        maybeRecord(() -> s().gl.blendFunc(GLBridge.translateBlendFactor(sfactor), GLBridge.translateBlendFactor(dfactor)));
+        maybeRecord(() -> GLBridge.setBlendFunc(s(), sfactor, dfactor));
     }
 
     static void lineWidth(float width) {
@@ -281,7 +281,9 @@ final class GLDispatch {
                 // живой буфер. Коллизии (данные блоков в мире) эта ошибка
                 // никогда не задевала — она чисто про кэш геометрии.
                 float[] snapshot = GLBridge.snapshotClientBuffers(state, first, count);
-                state.recordPublic(() -> GLBridge.drawArraysFromSnapshot(s(), mode, snapshot, count));
+                // PERF: геометрия заливается в собственный VBO/VAO один раз, при
+                // записи; replay = bindVertexArray + drawArrays (см. DrawRecord).
+                state.recordPublic(GLBridge.createDrawRecord(state, mode, snapshot, count));
                 return;
             }
         }
@@ -319,7 +321,12 @@ final class GLDispatch {
     }
 
     // --- misc ---
-    static int getError() { return s().gl.getError(); }
+    // PERF: gl.getError() в браузере — синхронный round-trip к GPU-процессу.
+    // Minecraft.c(String) звал его дважды за кадр только ради лога в консоль
+    // (визуально ничего не меняет). Для отладки: DEBUG_GL_ERRORS = true.
+    static final boolean DEBUG_GL_ERRORS = false;
+
+    static int getError() { return DEBUG_GL_ERRORS ? s().gl.getError() : 0; }
 
     static String getString(int name) {
         return GLBridge.getString(s(), name);

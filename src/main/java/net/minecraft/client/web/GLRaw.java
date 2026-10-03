@@ -1,6 +1,7 @@
 package net.minecraft.client.web;
 
 import org.teavm.jso.JSBody;
+import org.teavm.jso.typedarrays.Float32Array;
 import org.teavm.jso.typedarrays.Uint8Array;
 
 /**
@@ -72,6 +73,12 @@ public final class GLRaw {
     @JSBody(params = { "gl", "target", "size", "usage" }, script =
         "gl.bufferData(target, size, usage);")
     public static native void bufferDataCapacity(WebGL2 gl, int target, int size, int usage);
+
+    // PERF: заливка только первых `length` float'ов из переиспользуемого
+    // Float32Array (subarray — это view без копирования).
+    @JSBody(params = { "gl", "target", "data", "length", "usage" }, script =
+        "gl.bufferData(target, data.subarray(0, length), usage);")
+    public static native void bufferDataPrefix(WebGL2 gl, int target, Float32Array data, int length, int usage);
 
     // fog принимает то float, то массив (glFogfv для GL_FOG_COLOR) —
     // в decomp используются только glFogf/glFogi с одиночным значением,

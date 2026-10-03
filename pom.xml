@@ -80,7 +80,7 @@
                 DEBUG на первых сборках, потом переключить на WHOLE_PROGRAM
                 для минификации/оптимизации, когда всё стабильно компилируется.
               -->
-              <optimizationLevel>SIMPLE</optimizationLevel>
+              <optimizationLevel>ADVANCED</optimizationLevel>
               <obfuscated>false</obfuscated>
             </configuration>
           </execution>
