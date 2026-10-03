@@ -208,7 +208,13 @@ final class GLBridge {
             bytes[i] = buffer.get(pos + i);
         }
         Uint8Array arr = Uint8ArrayFactory.create(len);
-        arr.set(bytes, 0);
+        // ИСПРАВЛЕНО (WASM-GC сборка): arr.set(byte[], int) идёт через
+        // org.teavm.jso.impl.JS.arrayData, а он на WEBASSEMBLY_GC не поддерживается
+        // ("Method is not annotated with org.teavm.interop.Import"). Копируем
+        // поэлементно через индексатор Uint8Array — работает на обоих таргетах.
+        for (int i = 0; i < len; i++) {
+            arr.set(i, (short) (bytes[i] & 0xFF));
+        }
         return arr;
     }
 

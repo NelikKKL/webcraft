@@ -28,7 +28,11 @@ final class Float32ArrayFactory {
     static Float32Array wrap(float[] data) {
         ArrayBuffer buffer = new ArrayBuffer(data.length * 4);
         Float32Array arr = new Float32Array(buffer);
-        arr.set(data, 0);
+        // ИСПРАВЛЕНО (WASM-GC сборка): arr.set(float[], int) идёт через
+        // JS.arrayData, не поддерживаемый на WEBASSEMBLY_GC. Копируем поэлементно.
+        for (int i = 0; i < data.length; i++) {
+            arr.set(i, data[i]);
+        }
         return arr;
     }
 }
