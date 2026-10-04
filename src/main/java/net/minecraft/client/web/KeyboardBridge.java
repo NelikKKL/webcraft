@@ -118,14 +118,51 @@ public final class KeyboardBridge {
 
     @JSBody(params = { "handler" }, script =
         "window.__mcRepeatEnabled = window.__mcRepeatEnabled || false;" +
+        "var lastRealEsc = -100000, lastSynthEsc = -100000;" +
+        "function now() { return (window.performance && performance.now) ? performance.now() : Date.now(); }" +
         "window.addEventListener('keydown', function(e) {" +
+        // ИСПРАВЛЕНО: F1-F10 больше не вызывают функции браузера (F5 — перезагрузка,
+        // F3 — поиск, F1 — справка и т.д.): они нужны игре (F1 — скрыть HUD, F3 — отладка,
+        // F5 — вид от третьего лица...). Не трогаем F11 (полноэкранный режим браузера) и F12
+        // (DevTools), а также сочетания с Ctrl/Cmd (Ctrl+F5 и т.п. остаются браузерными).
+        "  var m = /^F([1-9]|10)$/.exec(e.code);" +
+        "  if (m && !e.ctrlKey && !e.metaKey) e.preventDefault();" +
+        "  if (e.code === 'Escape') {" +
+        // Если мы только что сами послали Esc из-за выхода из pointer lock — настоящий
+        // keydown (если браузер всё же его доставил) глотаем, чтобы пауза не открылась и сразу не закрылась.
+        "    if (now() - lastSynthEsc < 200) return;" +
+        "    lastRealEsc = now();" +
+        "  } else if (window.__wantsPointerLock) {" +
+        // Esc — не user activation, поэтому после выхода из паузы клавишей Esc захват
+        // курсора браузер отклоняет; любая другая клавиша — настоящий жест, берём захват тут.
+        "    var cv = document.querySelector('canvas');" +
+        "    if (cv && document.pointerLockElement !== cv) {" +
+        "      try { var p = cv.requestPointerLock(); if (p && p.catch) p.catch(function() {}); } catch (err) {}" +
+        "    }" +
+        "  }" +
         "  if (e.repeat && !window.__mcRepeatEnabled) return;" +
         "  handler(e.code, true, e.key);" +
         "  var navKeys = ['Tab','Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];" +
         "  if (navKeys.indexOf(e.code) !== -1) e.preventDefault();" +
         "}, false);" +
         "window.addEventListener('keyup', function(e) {" +
+        "  if (e.code === 'Escape' && now() - lastSynthEsc < 200) return;" +
         "  handler(e.code, false, e.key);" +
+        "}, false);" +
+        // ИСПРАВЛЕНО (Esc "терял фокус" и открывал меню только со второго раза): пока
+        // курсор захвачен (pointer lock), браузер сам обрабатывает первый Esc —
+        // выходит из захвата и НЕ присылает странице keydown. Поэтому выход из захвата,
+        // который инициировала не игра (игра перед своим exitPointerLock ставит
+        // __mcExpectedUnlock), считаем нажатием Esc и отдаём игре — меню паузы
+        // открывается с первого раза, как в оригинале. Так же игра ставится на паузу,
+        // если окно потеряло фокус (alt-tab).
+        "document.addEventListener('pointerlockchange', function() {" +
+        "  if (document.pointerLockElement) { window.__mcExpectedUnlock = false; return; }" +
+        "  if (window.__mcExpectedUnlock) { window.__mcExpectedUnlock = false; return; }" +
+        "  if (now() - lastRealEsc < 200) return;" +
+        "  lastSynthEsc = now();" +
+        "  handler('Escape', true, 'Escape');" +
+        "  handler('Escape', false, 'Escape');" +
         "}, false);")
     private static native void installListeners(DomKeyHandler handler);
 }

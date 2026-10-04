@@ -77,6 +77,9 @@ public final class Canvas {
 
     @JSBody(params = {}, script =
         "window.__wantsPointerLock = false;" +
+        // Выход инициирован самой игрой (пауза/инвентарь) — KeyboardBridge не должен
+        // принимать его за нажатие Esc пользователя.
+        "if (document.pointerLockElement) { window.__mcExpectedUnlock = true; }" +
         "document.exitPointerLock();")
     public static native void exitPointerLock();
 
