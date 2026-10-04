@@ -50,13 +50,26 @@ public class fu {
             if (string.startsWith("##")) {
                 this.a(this.b(this.a(d2.a(string.substring(2)))), n3);
             } else if (string.startsWith("%clamp%")) {
+                // ИСПРАВЛЕНО ("чёрные контуры у текста/сердец/частиц"): если файл не
+                // загрузился (в assets нет misc/shadow.png), исключение вылетало
+                // ДО сброса флага, и он навсегда оставался true — все текстуры,
+                // загруженные позже, получали чужие параметры. Сбрасываем в finally.
                 this.i = true;
-                this.a(this.a(d2.a(string.substring(7))), n3);
-                this.i = false;
+                try {
+                    this.a(this.a(d2.a(string.substring(7))), n3);
+                } finally {
+                    this.i = false;
+                }
             } else if (string.startsWith("%blur%")) {
+                // То же для %blur%: застрявший j == true включал GL_LINEAR для ВСЕХ
+                // последующих текстур (icons.png, particles.png...) — отсюда
+                // билинейное подмешивание соседних клеток атласа.
                 this.j = true;
-                this.a(this.a(d2.a(string.substring(6))), n3);
-                this.j = false;
+                try {
+                    this.a(this.a(d2.a(string.substring(6))), n3);
+                } finally {
+                    this.j = false;
+                }
             } else {
                 this.a(this.a(d2.a(string)), n3);
             }
@@ -362,11 +375,14 @@ public class fu {
                 }
                 int n3 = (Integer)this.b.get(string);
                 this.a(bufferedImage, n3);
-                this.j = false;
-                this.i = false;
             }
             catch (IOException iOException) {
                 iOException.printStackTrace();
+            }
+            finally {
+                // Флаги сбрасываются при ЛЮБОМ исходе (см. fu.a(String)).
+                this.j = false;
+                this.i = false;
             }
         }
     }
