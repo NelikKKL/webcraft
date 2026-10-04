@@ -55,9 +55,25 @@ public final class Shaders {
         "uniform float uFogEnd;\n" +
         "uniform vec4 uFogColor;\n" +
         "uniform vec4 uColorMult;\n" + // текущий glColor4f (используется вместе с per-vertex цветом или вместо)
+        "uniform bool uNearest;\n" +   // текстура запрошена с GL_NEAREST: читаем тексели напрямую
+        "uniform int uAlphaFunc;\n" +  // 0 = alpha test выкл, 1 = GREATER, 2 = GEQUAL
+        "uniform float uAlphaRef;\n" +
         "out vec4 outColor;\n" +
+        // PERF/FIX: для GL_NEAREST-текстур берём texelFetch вместо texture().
+        // Результат тот же, что у аппаратного NEAREST+REPEAT, но не зависит от
+        // фильтра сэмплера: никакого билинейного подмешивания соседних клеток
+        // атласа (чёрные контуры у текста/сердец/частиц, "размытый" прицел).
+        "vec4 sampleTex(vec2 uv) {\n" +
+        "  if (uNearest) {\n" +
+        "    ivec2 sz = textureSize(uTexture, 0);\n" +
+        "    ivec2 t = ivec2(floor(uv * vec2(sz)));\n" +
+        "    t = ((t % sz) + sz) % sz;\n" +
+        "    return texelFetch(uTexture, t, 0);\n" +
+        "  }\n" +
+        "  return texture(uTexture, uv);\n" +
+        "}\n" +
         "void main() {\n" +
-        "  vec4 base = uUseTexture ? texture(uTexture, vTexCoord) : vec4(1.0);\n" +
+        "  vec4 base = uUseTexture ? sampleTex(vTexCoord) : vec4(1.0);\n" +
         "  vec4 color = base * vColor * uColorMult;\n" +
         "  if (uUseLighting) {\n" +
         "    vec3 n = normalize(vNormalWorld);\n" +
@@ -78,6 +94,10 @@ public final class Shaders {
         "    }\n" +
         "    color.rgb = mix(uFogColor.rgb, color.rgb, f);\n" +
         "  }\n" +
+        // Настоящий alpha test (раньше glAlphaFunc игнорировался, и полупрозрачные
+        // фрагменты с alpha <= 0.1 рисовались серыми/чёрными "призраками").
+        "  if (uAlphaFunc == 1 && color.a <= uAlphaRef) discard;\n" +
+        "  if (uAlphaFunc == 2 && color.a < uAlphaRef) discard;\n" +
         "  if (color.a < 0.004) discard;\n" +
         "  outColor = color;\n" +
         "}\n";
@@ -93,6 +113,7 @@ public final class Shaders {
     public final WebGLUniformLocation uLightDir0, uLightDir1, uLightColor0, uLightColor1, uAmbient;
     public final WebGLUniformLocation uUseFog, uFogMode, uFogDensity, uFogStart, uFogEnd, uFogColor;
     public final WebGLUniformLocation uColorMult;
+    public final WebGLUniformLocation uNearest, uAlphaFunc, uAlphaRef;
 
     Shaders(WebGL2 gl) {
         WebGLShader vs = compile(gl, 35633 /*VERTEX_SHADER*/, VERTEX_SRC);
@@ -122,6 +143,9 @@ public final class Shaders {
         uFogEnd = gl.getUniformLocation(program, "uFogEnd");
         uFogColor = gl.getUniformLocation(program, "uFogColor");
         uColorMult = gl.getUniformLocation(program, "uColorMult");
+        uNearest = gl.getUniformLocation(program, "uNearest");
+        uAlphaFunc = gl.getUniformLocation(program, "uAlphaFunc");
+        uAlphaRef = gl.getUniformLocation(program, "uAlphaRef");
     }
 
     private static WebGLShader compile(WebGL2 gl, int type, String src) {

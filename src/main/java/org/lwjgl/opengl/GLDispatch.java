@@ -168,7 +168,7 @@ final class GLDispatch {
     }
 
     static void texParameteri(int target, int pname, int param) {
-        maybeRecord(() -> s().gl.texParameteri(target, pname, param));
+        maybeRecord(() -> GLBridge.texParameteri(s(), target, pname, param));
     }
 
     static void pixelStorei(int pname, int param) {

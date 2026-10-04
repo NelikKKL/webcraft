@@ -203,6 +203,9 @@ final class GLBridge {
     static void bindTexture(GLState s, int id) {
         WebGLTexture tex = id == 0 ? null : s.textures.get(id);
         s.boundTexture = tex;
+        s.boundTextureId = id;
+        Boolean nearest = s.texNearest.get(id);
+        s.curNearest = nearest == null || nearest.booleanValue();
         if (!s.glTexValid || s.glTex != tex) {
             s.gl.bindTexture(GL_TEXTURE_2D, tex);
             s.glTex = tex;
@@ -210,7 +213,18 @@ final class GLBridge {
         }
     }
 
+    /** glTexParameteri: передаём в GL и запоминаем запрошенный фильтр увеличения для шейдера. */
+    static void texParameteri(GLState s, int target, int pname, int param) {
+        s.gl.texParameteri(target, pname, param);
+        if (pname == 10240 /* GL_TEXTURE_MAG_FILTER */) {
+            boolean nearest = param == 9728 || param == 9984 || param == 9986;
+            s.texNearest.put(s.boundTextureId, Boolean.valueOf(nearest));
+            s.curNearest = nearest;
+        }
+    }
+
     static void deleteTexture(GLState s, int id) {
+        s.texNearest.remove(id);
         WebGLTexture tex = s.textures.remove(id);
         if (tex != null) {
             s.gl.deleteTexture(tex);
@@ -752,6 +766,22 @@ final class GLBridge {
         if (s.cUseTex != useTexture) {
             s.gl.uniform1i(sh.uUseTexture, useTexture);
             s.cUseTex = useTexture;
+        }
+
+        int nearest = s.curNearest ? 1 : 0;
+        if (s.cNearest != nearest) {
+            s.gl.uniform1i(sh.uNearest, nearest);
+            s.cNearest = nearest;
+        }
+        // glAlphaFunc(GREATER|GEQUAL, ref) при включённом GL_ALPHA_TEST
+        int alphaFunc = !s.alphaTestEnabled ? 0 : (s.alphaFunc == 516 ? 1 : (s.alphaFunc == 518 ? 2 : 0));
+        if (s.cAlphaFunc != alphaFunc) {
+            s.gl.uniform1i(sh.uAlphaFunc, alphaFunc);
+            s.cAlphaFunc = alphaFunc;
+        }
+        if (s.cAlphaRef != s.alphaRef) {
+            s.gl.uniform1f(sh.uAlphaRef, s.alphaRef);
+            s.cAlphaRef = s.alphaRef;
         }
 
         int useLighting = s.lightingEnabled ? 1 : 0;
