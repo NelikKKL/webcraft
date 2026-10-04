@@ -1,6 +1,7 @@
 package org.lwjgl.opengl;
 
 import net.minecraft.client.web.Canvas;
+import net.minecraft.client.web.Fxaa;
 import net.minecraft.client.web.GLState;
 import net.minecraft.client.web.WebGL2;
 import org.lwjgl.LWJGLException;
@@ -79,6 +80,7 @@ public final class Display {
         WebGL2 gl = Canvas.getContext(canvas);
         GLState.INSTANCE = new GLState(gl);
         gl.viewport(0, 0, Canvas.width(canvas), Canvas.height(canvas));
+        Fxaa.init(GLState.INSTANCE);   // сглаживание: рендер в FBO + FXAA-проход (см. Fxaa.java)
         created = true;
     }
 
@@ -97,7 +99,8 @@ public final class Display {
      * совместимости сигнатур с decomp-кодом (см. Minecraft.java:238).
      */
     public static void swapBuffers() {
-        // no-op: см. javadoc выше.
+        // Буфер меняет браузер; здесь только выводим кадр (экран загрузки) из FBO в canvas.
+        Fxaa.endFrame();
     }
 
     /**
@@ -107,9 +110,11 @@ public final class Display {
      * decomp-коде проверяется this.k.getWidth()/getHeight() каждый кадр).
      */
     public static void update() {
+        Fxaa.endFrame();         // кадр готов: вывести/скопировать FBO в canvas (см. Fxaa.java)
         if (fullscreen) {
             resizeToWindow();
         }
+        Fxaa.syncSize();         // canvas мог изменить размер — подогнать FBO
     }
 
     public static boolean isActive() {

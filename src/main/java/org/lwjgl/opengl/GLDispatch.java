@@ -97,7 +97,7 @@ final class GLDispatch {
     }
 
     static void colorMask(boolean r, boolean g, boolean b, boolean a) {
-        maybeRecord(() -> s().gl.colorMask(r, g, b, a));
+        maybeRecord(() -> { GLState cs = s(); cs.cmR = r; cs.cmG = g; cs.cmB = b; cs.cmA = a; cs.gl.colorMask(r, g, b, a); });
     }
 
     static void depthFunc(int func) {

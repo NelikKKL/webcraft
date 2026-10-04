@@ -154,6 +154,7 @@ final class GLBridge {
     }
 
     static void clear(GLState s, int mask) {
+        s.frameDirty = true;   // для Fxaa.endFrame(): в кадр что-то рисовали
         s.gl.clear(mask);
     }
 
@@ -729,6 +730,7 @@ final class GLBridge {
      * повторяем то, что уже установлено у программы.
      */
     private static void applyUniforms(GLState s) {
+        s.frameDirty = true;   // для Fxaa.endFrame(): в кадр что-то рисовали
         Shaders sh = s.shaders;
         if (!s.programBound) {
             s.gl.useProgram(sh.program);

@@ -274,6 +274,9 @@ public class kb {
         n2 = n4 - Mouse.getY() * n4 / this.h.d - 1;
         if (this.h.e != null) {
             this.c(f2);
+            // FXAA только для 3D-сцены: сглаживаем её и выводим в canvas, а HUD/меню/текст
+            // ниже рисуются поверх уже готовой картинки и остаются чёткими (см. Fxaa.java).
+            net.minecraft.client.web.Fxaa.resolveScene();
             if (!Keyboard.isKeyDown(59)) {
                 this.h.u.a(f2, this.h.p != null, n5, n2);
             }

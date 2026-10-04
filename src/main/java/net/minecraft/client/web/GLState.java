@@ -303,6 +303,10 @@ public final class GLState {
     public int stDepthMask;                             // 0 unknown, 1 true, 2 false
     public int stBlendSrc = -1, stBlendDst = -1, stDepthFunc = -1, stCullFace = -1;
 
+    // FXAA (см. Fxaa.java): в кадр что-то нарисовали / текущая маска цвета
+    public boolean frameDirty = false;
+    public boolean cmR = true, cmG = true, cmB = true, cmA = true;
+
     public WebGLTexture glTex = null;       // что реально привязано к TEXTURE_2D
     public boolean glTexValid = false;
 
