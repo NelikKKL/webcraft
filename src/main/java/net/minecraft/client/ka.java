@@ -12,6 +12,7 @@ public class ka {
     private nc[] k;
     private int l;
     private int m;
+    private int texH = 32;   // высота текстуры (32 — классика, 64 — скины 64x64)
     public float a;
     public float b;
     public float c;
@@ -27,6 +28,19 @@ public class ka {
     public ka(int n2, int n3) {
         this.l = n2;
         this.m = n3;
+    }
+
+    public ka(int n2, int n3, int texH) {
+        this(n2, n3);
+        this.texH = texH;
+    }
+
+    /** Освобождает display list (нужно, когда модель перестраивается под другой скин). */
+    public void free() {
+        if (this.n) {
+            GL11.glDeleteLists((int)this.o, 1);
+            this.n = false;
+        }
     }
 
     public void a(float f2, float f3, float f4, int n2, int n3, int n4) {
@@ -66,12 +80,12 @@ public class ka {
         this.j[5] = ew7;
         this.j[6] = ew8;
         this.j[7] = ew9;
-        this.k[0] = new nc(new ew[]{ew7, ew3, ew4, ew8}, this.l + n4 + n2, this.m + n4, this.l + n4 + n2 + n4, this.m + n4 + n3);
-        this.k[1] = new nc(new ew[]{ew2, ew6, ew9, ew5}, this.l + 0, this.m + n4, this.l + n4, this.m + n4 + n3);
-        this.k[2] = new nc(new ew[]{ew7, ew6, ew2, ew3}, this.l + n4, this.m + 0, this.l + n4 + n2, this.m + n4);
-        this.k[3] = new nc(new ew[]{ew4, ew5, ew9, ew8}, this.l + n4 + n2, this.m + 0, this.l + n4 + n2 + n2, this.m + n4);
-        this.k[4] = new nc(new ew[]{ew3, ew2, ew5, ew4}, this.l + n4, this.m + n4, this.l + n4 + n2, this.m + n4 + n3);
-        this.k[5] = new nc(new ew[]{ew6, ew7, ew8, ew9}, this.l + n4 + n2 + n4, this.m + n4, this.l + n4 + n2 + n4 + n2, this.m + n4 + n3);
+        this.k[0] = new nc(new ew[]{ew7, ew3, ew4, ew8}, this.l + n4 + n2, this.m + n4, this.l + n4 + n2 + n4, this.m + n4 + n3, this.texH);
+        this.k[1] = new nc(new ew[]{ew2, ew6, ew9, ew5}, this.l + 0, this.m + n4, this.l + n4, this.m + n4 + n3, this.texH);
+        this.k[2] = new nc(new ew[]{ew7, ew6, ew2, ew3}, this.l + n4, this.m + 0, this.l + n4 + n2, this.m + n4, this.texH);
+        this.k[3] = new nc(new ew[]{ew4, ew5, ew9, ew8}, this.l + n4 + n2, this.m + 0, this.l + n4 + n2 + n2, this.m + n4, this.texH);
+        this.k[4] = new nc(new ew[]{ew3, ew2, ew5, ew4}, this.l + n4, this.m + n4, this.l + n4 + n2, this.m + n4 + n3, this.texH);
+        this.k[5] = new nc(new ew[]{ew6, ew7, ew8, ew9}, this.l + n4 + n2 + n4, this.m + n4, this.l + n4 + n2 + n4 + n2, this.m + n4 + n3, this.texH);
         if (this.g) {
             for (int i2 = 0; i2 < this.k.length; ++i2) {
                 this.k[i2].a();

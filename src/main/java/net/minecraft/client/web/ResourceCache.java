@@ -38,6 +38,15 @@ public final class ResourceCache {
      */
     private static Map<String, Entry> overlay = null;
 
+    /** Динамические ресурсы (скин игрока): кладутся в базовый кэш и переживают смену текстур-пака. */
+    static void putDynamic(String path, Entry e) {
+        cache.put(normalize(path), e);
+    }
+
+    static void removeDynamic(String path) {
+        cache.remove(normalize(path));
+    }
+
     public static void setOverlay(Map<String, Entry> map) {
         overlay = map;
     }

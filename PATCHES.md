@@ -51,7 +51,7 @@ decomp-код игры не тронут. Картинка идентична: �
 
 ## ТЕКСТУР-ПАКИ (zip)
 
-* `web/texturepacks.js` — читает zip в браузере (deflate через `DecompressionStream`, PNG
+* `web/extras.js` — читает zip в браузере (deflate через `DecompressionStream`, PNG
   декодирует браузер), хранит паки в IndexedDB (подхватываются при следующем запуске),
   добавление: кнопка «Add pack...» в «Mods and Texture Packs» или drag&drop `.zip` на окно.
 * `TexturePackStore` / `WebTexturePack` (Java) + `ResourceCache.setOverlay`: файлы активного
@@ -61,6 +61,28 @@ decomp-код игры не тронут. Картинка идентична: �
 * Ограничения: HD-паки (terrain.png не 256x256) грузятся, но анимированные тайлы (вода,
   лава, огонь, портал) выглядят неверно — игра пишет их блоками 16x16; шрифт (`font/default.png`)
   меняется только после перезагрузки страницы (ширины глифов считаются один раз).
+
+## КУРСОР, СКИН И НИК, МЕНЬШЕ ФАЙЛОВ В БИЛДЕ
+
+* **Курсор**: исходная картинка 32x47 была заметно больше системной стрелки. Теперь она
+  уменьшена до 14x20 CSS px (плюс 28x40 для HiDPI через `image-set`) и зашита base64-строкой в
+  `MouseBridge.java` (`applyCursor`), файл `cursor.png` и CSS-правило удалены.
+* **Скин и ник** (Options -> "Skin & Name..."): `SkinScreen.java` (поле ника, выбор PNG,
+  Reset, режим рук Auto/Classic/Slim, вращающийся предпросмотр), `SkinStore.java` (состояние +
+  localStorage `webcraft.skin / webcraft.nick / webcraft.skinarms`), JS-часть в `web/extras.js`
+  (выбор файла, декодирование PNG, drag&drop `.png` на окно). Игрок рисуется с `/skin/player.png`
+  (`Player.z`), смена применяется на лету (`Minecraft.applySkinNow`, `fu.c`).
+* **Современные скины**: `PlayerModel.java` (наследник `dc`, используется в `Armor`) — для
+  скинов 64x64 (и HD 1:1) строит раскладку с отдельными левыми рукой/ногой, вторым слоем
+  (куртка, рукава, штаны) и тонкими руками 3 px (Alex; Auto определяет по прозрачности).
+  Для этого `ka`/`nc` получили параметр высоты текстуры (32 по умолчанию — прежнее
+  поведение). Скины 64x32 и стандартный Steve рисуются прежней моделью без изменений.
+  Ограничение: броня рисуется поверх без поправки на второй слой/тонкие руки.
+* **Файлов в билде меньше**: `loading-bg.png` вшит в `index.html` как data URI; `lib.js` +
+  `akrile_bg.wasm` + `akrile.js` собраны в один `akrile.js` (WASM — base64 в конце файла,
+  инициализация через `WebAssembly.instantiate`); `cursor.png` — в `MouseBridge.java`;
+  `texturepacks.js` и код скина — один `extras.js`. В `web/` остались:
+  `index.html`, `akrile.js`, `extras.js`, `assets.akrile`.
 
 ## ВРЕМЕННАЯ ДИАГНОСТИКА (убрать после использования!)
 

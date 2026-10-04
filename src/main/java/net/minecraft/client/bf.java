@@ -23,7 +23,9 @@ extends bp {
             }
             this.e.add(new oh(i2, this.c / 2 - 155 + i2 % 2 * 160, this.d / 6 + 24 * (i2 >> 1), i2, this.i.d(i2), this.i.c(i2)));
         }
-        this.e.add(new gh(100, this.c / 2 - 100, this.d / 6 + 120 + 12, "Controls..."));
+        // Controls и Skin в одну строку (как две колонки кнопок выше)
+        this.e.add(new r(100, this.c / 2 - 155, this.d / 6 + 120 + 12, "Controls..."));
+        this.e.add(new r(101, this.c / 2 + 5, this.d / 6 + 120 + 12, "Skin & Name..."));
         this.e.add(new gh(200, this.c / 2 - 100, this.d / 6 + 168, "Done"));
     }
 
@@ -39,6 +41,10 @@ extends bp {
         if (gh2.f == 100) {
             this.b.y.b();
             this.b.a(new nm(this, this.i));
+        }
+        if (gh2.f == 101) {
+            this.b.y.b();
+            this.b.a(new SkinScreen(this));
         }
         if (gh2.f == 200) {
             this.b.y.b();

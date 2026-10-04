@@ -14,16 +14,15 @@
   #glcanvas {
     display: block;
     width: 100vw; height: 100vh;
-    /* Кастомный курсор (стрелка) вместо системного crosshair.
-       Hotspot (1,1) — кончик стрелки в верхнем левом углу картинки
-       (см. cursor.png, обрезан/масштабирован из исходного 96x96, 32x47). */
-    cursor: url('cursor.png') 1 1, auto;
+    /* Курсор задаётся из Java (MouseBridge.applyCursor): картинка зашита в
+       код, размер приведён к системной стрелке, есть 2x-вариант для HiDPI. */
   }
 
   /* Общий тайловый фон меню (16x16 текстура, замощена как в оригинальной игре) — используется и экраном загрузки, и экраном краша. */
   .tiled-bg {
     position: fixed; inset: 0;
-    background-image: url('loading-bg.png');
+    /* loading-bg.png (16x16) вшит как data URI — отдельного файла нет */
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAMAAAAoLQ9TAAAABGdBTUEAALGPC/xhBQAAAwBQTFRFWT0peVU6dFhEbGxslmxKuYVch4eHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDLsGAAAABh0RVh0U29mdHdhcmUAUGFpbnQuTkVUIHYzLjM2qefiJQAAAHpJREFUKFMlj4kRACEIA8MJ9l/y7aKOECHhyXRXrQm+JtWAviGITzKkeCQBoPQZSYpaVvCDMXg0XHNotypFKVsXQAO0pAQ2bZnVOCyX9qBXQbXy1S1RPVp+fW2LBx8yfOA6CZF3xl2qPis6AP1kscAO5ZYGHOP2m6LyA0AaAl8NwX0hAAAAAElFTkSuQmCC');
     background-repeat: repeat;
     background-size: 32px 32px;
     image-rendering: pixelated;
@@ -155,6 +154,7 @@
   </div>
 
   <!-- akrile — собственный формат архива вместо zip/JSZip (см. TODO.md).
+       Вся библиотека (JS-обвязка + WASM в base64) — один файл akrile.js.
        ES-модуль: инициализация и вызов window.main() ниже, после alpha126.js. -->
 
   <script>
@@ -226,8 +226,8 @@
     })();
   </script>
 
-  <!-- Текстур-паки (.zip): разбор архива, IndexedDB, drag&drop — см. texturepacks.js -->
-  <script src="texturepacks.js"></script>
+  <!-- Текстур-паки (.zip): разбор архива, IndexedDB, drag&drop — см. extras.js -->
+  <script src="extras.js"></script>
   <script src="alpha126.js"></script>
   <script type="module">
     // ВАЖНО: alpha126.js — UMD-модуль. В браузерном контексте (нет AMD/

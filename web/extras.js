@@ -1,7 +1,9 @@
 /*
- * Текстур-паки (.zip) для web-порта Minecraft Alpha 1.2.6.
+ * Дополнения web-порта Minecraft Alpha 1.2.6: текстур-паки (.zip) и скин игрока.
+ * (Один файл вместо двух — чтобы в билде было меньше файлов.)
  *
- * Что делает этот файл:
+ * ===== Текстур-паки =====
+ * Что делает эта часть:
  *   - читает zip прямо в браузере (central directory + stored/deflate через
  *     встроенный DecompressionStream — внешних библиотек не нужно);
  *   - декодирует PNG браузером (createImageBitmap) и передаёт в Java готовые
@@ -196,6 +198,18 @@
     list.reduce(function (p, f) { return p.then(function () { return addFile(f); }); }, Promise.resolve());
   }
 
+  function loadSavedPacks() {
+    return dbGetAll().then(function (recs) {
+      recs.sort(function (a, b) { return (a.added || 0) - (b.added || 0); });
+      return recs.reduce(function (p, rec) {
+        return p.then(function () {
+          return rec.blob.arrayBuffer().then(function (buf) { return registerPack(rec.name, buf); })
+            .catch(function (e) { console.warn('Saved texture pack failed:', rec.name, e); });
+        });
+      }, Promise.resolve());
+    }).catch(function (e) { console.warn('Texture pack storage unavailable:', e); });
+  }
+
   window.TexturePacks = {
     pick: function () {
       var input = document.createElement('input');
@@ -215,15 +229,9 @@
 
     // Вызывается ResourcePreloader перед стартом игры.
     loadSaved: function () {
-      return dbGetAll().then(function (recs) {
-        recs.sort(function (a, b) { return (a.added || 0) - (b.added || 0); });
-        return recs.reduce(function (p, rec) {
-          return p.then(function () {
-            return rec.blob.arrayBuffer().then(function (buf) { return registerPack(rec.name, buf); })
-              .catch(function (e) { console.warn('Saved texture pack failed:', rec.name, e); });
-          });
-        }, Promise.resolve());
-      }).catch(function (e) { console.warn('Texture pack storage unavailable:', e); });
+      return loadSavedPacks().then(function () {
+        return window.Skins ? window.Skins.loadSaved() : undefined;
+      });
     },
 
     remove: function (name) {
@@ -231,14 +239,107 @@
     }
   };
 
-  // Drag & drop .zip на окно игры.
+
+  // ======================================================================
+  // ===== Скин игрока (PNG) ==============================================
+  // ======================================================================
+  // Меню Options -> Skin & Name... вызывает Skins.pick(). Файл декодируется
+  // браузером и уходит в Java (window.__javaSkin.set), копия сохраняется в
+  // localStorage и подхватывается при следующем запуске (loadSaved).
+  // Поддержка: 64x32 (классика), 64x64 (современные, в т.ч. slim "Alex"),
+  // HD — кратно 64 с соотношением 1:1 или 2:1.
+  var SKIN_KEY = 'webcraft.skin';
+
+  function skinSizeOk(w, h) {
+    if (w < 64 || w % 64 !== 0) return false;
+    return h === w || h * 2 === w;
+  }
+
+  function bitmapToRgba(bmp) {
+    var c = document.createElement('canvas');
+    c.width = bmp.width; c.height = bmp.height;
+    var g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(bmp, 0, 0);
+    var img = g.getImageData(0, 0, bmp.width, bmp.height);
+    return { canvas: c, w: bmp.width, h: bmp.height, rgba: new Uint8Array(img.data.buffer) };
+  }
+
+  function decodeSkin(blob) {
+    return createImageBitmap(blob).then(function (bmp) {
+      var r = bitmapToRgba(bmp);
+      if (bmp.close) bmp.close();
+      return r;
+    });
+  }
+
+  function useSkin(blob, persist) {
+    return decodeSkin(blob).then(function (r) {
+      if (!skinSizeOk(r.w, r.h)) {
+        throw new Error('unsupported skin size ' + r.w + 'x' + r.h + ' (need 64x32, 64x64 or HD multiples)');
+      }
+      window.__javaSkin.set(r.w, r.h, r.rgba);
+      if (persist) {
+        try { localStorage.setItem(SKIN_KEY, r.canvas.toDataURL('image/png')); }
+        catch (e) { console.warn('Could not save skin:', e); }
+      }
+      return r;
+    });
+  }
+
+  function addSkinFile(file) {
+    if (!window.__javaSkin) return Promise.resolve();
+    return useSkin(file, true).then(function (r) {
+      toast('Skin applied (' + r.w + 'x' + r.h + ')');
+    }).catch(function (err) {
+      console.error('Skin failed:', err);
+      toast('Skin failed: ' + (err && err.message ? err.message : err), true);
+    });
+  }
+
+  window.Skins = {
+    pick: function () {
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.png,image/png';
+      input.style.display = 'none';
+      input.addEventListener('change', function () {
+        if (input.files && input.files[0]) addSkinFile(input.files[0]);
+        input.remove();
+      });
+      document.body.appendChild(input);
+      input.click();
+    },
+
+    // Вызывается перед стартом игры (из TexturePacks.loadSaved).
+    loadSaved: function () {
+      var url = null;
+      try { url = localStorage.getItem(SKIN_KEY); } catch (e) {}
+      if (!url || !window.__javaSkin) return Promise.resolve();
+      return fetch(url).then(function (r) { return r.blob(); })
+        .then(function (b) { return useSkin(b, false); })
+        .catch(function (e) { console.warn('Saved skin failed to load:', e); });
+    },
+
+    forget: function () {
+      try { localStorage.removeItem(SKIN_KEY); } catch (e) {}
+    }
+  };
+
+  // Drag & drop на окно игры: .zip — текстур-пак, .png — скин.
   window.addEventListener('dragover', function (e) {
     if (e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0) e.preventDefault();
   });
   window.addEventListener('drop', function (e) {
-    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
-      e.preventDefault();
-      addFiles(e.dataTransfer.files);
+    var files = e.dataTransfer && e.dataTransfer.files;
+    if (!files || !files.length) return;
+    e.preventDefault();
+    var zips = [], png = null;
+    for (var i = 0; i < files.length; i++) {
+      if (/\.zip$/i.test(files[i].name)) zips.push(files[i]);
+      else if (/\.png$/i.test(files[i].name) && !png) png = files[i];
     }
+    if (png) addSkinFile(png);
+    if (zips.length) addFiles(zips);
+    else if (!png) toast('Drop a .zip (texture pack) or a .png (skin)', true);
   });
 })();

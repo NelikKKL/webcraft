@@ -25,7 +25,7 @@ public final class WebMinecraft extends Minecraft {
         // создании мира. sessionId ("-") не используется в одиночной
         // игре — он нужен только сетевому коду (ib.java, join server.jsp)
         // для мультиплеера, которого в этом порте нет.
-        this.i = new ea("Player", "-");
+        this.i = new ea(net.minecraft.client.web.SkinStore.nick(), "-");
     }
 
     @Override

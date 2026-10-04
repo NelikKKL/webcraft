@@ -15,7 +15,7 @@ extends ec {
     static private final String[] i = new String[]{"cloth", "chain", "iron", "diamond", "gold"};
 
     public Armor() {
-        super(new dc(0.0f), 0.5f);
+        super(new PlayerModel(0.0f), 0.5f);   // модель игрока: поддержка скинов 64x64
         this.a = (dc)this.e;
         this.g = new dc(1.0f);
         this.h = new dc(0.5f);
@@ -182,9 +182,12 @@ extends ec {
     }
 
     public void b() {
+        PlayerModel pm = (PlayerModel)this.a;
+        pm.prepare();   // раскладка частей под текущий скин (классика / 64x64 / slim)
         this.a.k = 0.0f;
         this.a.a(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0625f);
         this.a.d.a(0.0625f);
+        pm.renderHandOverlay(0.0625f);
     }
 
     @Override

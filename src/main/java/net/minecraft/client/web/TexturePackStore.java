@@ -11,7 +11,7 @@ import org.teavm.jso.JSObject;
 import org.teavm.jso.typedarrays.Uint8Array;
 
 /**
- * Список пользовательских текстур-паков (zip). JS-часть (web/texturepacks.js)
+ * Список пользовательских текстур-паков (zip). JS-часть (web/extras.js)
  * разбирает архивы, хранит их в IndexedDB между запусками и вызывает
  * колбэки ниже: begin(name) -> resource(name, path, w, h, rgba)* -> end(name).
  * Java-часть (ff.java) берёт список через {@link #list()}.

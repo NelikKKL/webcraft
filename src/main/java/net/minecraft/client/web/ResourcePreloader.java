@@ -68,7 +68,8 @@ public final class ResourcePreloader {
      * отдельных файлов логируются и пропускаются — не блокируют остальные).
      */
     public static void preloadAll(OnComplete onComplete) {
-        TexturePackStore.install();   // колбэки для web/texturepacks.js (zip-паки)
+        TexturePackStore.install();   // колбэки для web/extras.js (zip-паки)
+        SkinStore.install();          // колбэки для web/extras.js (скин игрока)
         ResourceReadyCallback onResource = ResourceCache::put;
         TextResourceReadyCallback onText = ResourceCache::putText;
         JsCallback onDone = onComplete::done;

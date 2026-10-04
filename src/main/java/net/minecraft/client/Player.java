@@ -26,7 +26,7 @@ extends Mob {
         this.C = "humanoid";
         this.B = 180.0f;
         this.bf = 20;
-        this.z = "/mob/char.png";
+        this.z = net.minecraft.client.web.SkinStore.texturePath();   // свой скин или /mob/char.png
     }
 
     @Override

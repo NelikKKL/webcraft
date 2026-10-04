@@ -71,6 +71,24 @@ public class fu {
         }
     }
 
+    /**
+     * Перезагружает уже загруженную именованную текстуру "на месте" (тот же
+     * GL-id) — нужно для смены скина без перезапуска. Если текстура ещё не
+     * загружалась, ничего не делает: при первом обращении она подтянется сама.
+     */
+    public void c(String string) {
+        Integer n2 = (Integer)this.b.get(string);
+        if (n2 == null) {
+            return;
+        }
+        try {
+            this.a(this.a(this.k.a.a(string)), n2);
+        }
+        catch (IOException iOException) {
+            System.out.println("Failed to reload texture " + string + ": " + iOException);
+        }
+    }
+
     private BufferedImage b(BufferedImage bufferedImage) {
         int n2 = bufferedImage.getWidth() / 16;
         BufferedImage bufferedImage2 = new BufferedImage(16, bufferedImage.getHeight() * n2, 2);

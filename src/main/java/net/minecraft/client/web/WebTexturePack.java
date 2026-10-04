@@ -10,7 +10,7 @@ import org.lwjgl.opengl.GL11;
 
 /**
  * Текстур-пак, загруженный пользователем из .zip (разбор zip и декодирование
- * PNG делает JS — см. web/texturepacks.js; сюда файлы приходят уже готовыми
+ * PNG делает JS — см. web/extras.js; сюда файлы приходят уже готовыми
  * ARGB-картинками через {@link TexturePackStore}).
  *
  * Активация пака = подмена оверлея в {@link ResourceCache}: ImageIO.read(path)

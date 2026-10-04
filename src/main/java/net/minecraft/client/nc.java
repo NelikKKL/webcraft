@@ -13,13 +13,23 @@ public class nc {
     }
 
     public nc(ew[] ewArray, int n2, int n3, int n4, int n5) {
+        this(ewArray, n2, n3, n4, n5, 32);
+    }
+
+    /**
+     * texH — высота текстуры в пикселях (32 у классических скинов/мобов, 64 у
+     * современных скинов 64x64). Ширина по-прежнему 64; UV нормализованы, поэтому
+     * HD-версии (128x128 и т.д.) работают без изменений.
+     */
+    public nc(ew[] ewArray, int n2, int n3, int n4, int n5, int texH) {
         this(ewArray);
         float f2 = 0.0015625f;
-        float f3 = 0.003125f;
-        ewArray[0] = ewArray[0].a((float)n4 / 64.0f - f2, (float)n3 / 32.0f + f3);
-        ewArray[1] = ewArray[1].a((float)n2 / 64.0f + f2, (float)n3 / 32.0f + f3);
-        ewArray[2] = ewArray[2].a((float)n2 / 64.0f + f2, (float)n5 / 32.0f - f3);
-        ewArray[3] = ewArray[3].a((float)n4 / 64.0f - f2, (float)n5 / 32.0f - f3);
+        float f3 = 0.1f / (float)texH;   // для texH=32 это ровно прежние 0.003125f
+        float h = (float)texH;
+        ewArray[0] = ewArray[0].a((float)n4 / 64.0f - f2, (float)n3 / h + f3);
+        ewArray[1] = ewArray[1].a((float)n2 / 64.0f + f2, (float)n3 / h + f3);
+        ewArray[2] = ewArray[2].a((float)n2 / 64.0f + f2, (float)n5 / h - f3);
+        ewArray[3] = ewArray[3].a((float)n4 / 64.0f - f2, (float)n5 / h - f3);
     }
 
     public void a() {

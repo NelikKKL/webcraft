@@ -425,9 +425,38 @@ implements Runnable {
      *    непроверенное поведение Thread.sleep в TeaVM JS-таргете).
      *  - Thread.yield() — убран (не имеет смысла в однопоточной модели).
      */
+    /**
+     * Применяет выбранные скин и ник: перезаливает текстуру скина на месте и
+     * переключает путь текстуры у живого игрока (если мир уже создан).
+     */
+    public void applySkinNow() {
+        String path = net.minecraft.client.web.SkinStore.texturePath();
+        if (this.n != null) {
+            this.n.c(net.minecraft.client.web.SkinStore.PATH);
+        }
+        if (this.g != null) {
+            this.g.z = path;
+        }
+    }
+
+    /** Меняет ник (в сессии и у живого игрока) и сохраняет его. */
+    public void applyNick(String nick) {
+        net.minecraft.client.web.SkinStore.setNick(nick);
+        String value = net.minecraft.client.web.SkinStore.nick();
+        if (this.i != null) {
+            this.i.b = value;
+        }
+        if (this.g != null) {
+            this.g.name = value;
+        }
+    }
+
     public void runOneFrame() {
         if (!isRunning()) {
             return;
+        }
+        if (net.minecraft.client.web.SkinStore.consumePending()) {
+            this.applySkinNow();
         }
         if (this.loadingActive) {
             // Идёт прогрев мира: обычный тик/рендер пропускаем, показываем прогресс.
