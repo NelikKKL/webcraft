@@ -569,7 +569,7 @@ implements Runnable {
             }
             this.c("Post render");
             ++fpsFrameCount;
-            boolean bl2 = this.m = !this.j() && this.p != null && this.p.b();
+            boolean bl2 = this.m = !this.j() && this.p != null && this.p.b() && !HostServer.isActive();   // при запущенном сервере пауза мир не останавливает
             while (System.currentTimeMillis() >= fpsTimerMs + 1000L) {
                 this.I = fpsFrameCount + " fps, " + bw.b + " chunk updates";
                 bw.b = 0;
@@ -990,6 +990,7 @@ implements Runnable {
                 }
                 // PERF: догружаем по одному чанку за тик (см. Session.pumpChunkQueue).
                 this.e.pumpChunkQueue(TrigLookup.b(this.g.aw / 16.0), TrigLookup.b(this.g.ay / 16.0));
+                HostServer.tick(this);   // мультиплеер: хост обслуживает гостей (см. HostServer)
             }
             this.e.k = this.y.x;
             if (this.e.z) {
@@ -1079,6 +1080,7 @@ implements Runnable {
     }
 
     public void a(Session cy2, String string, Player eb2) {
+        HostServer.onWorldChanged();   // смена/закрытие мира останавливает сервер
         final boolean defer = this.deferLoad;
         this.deferLoad = false;
         this.loadingActive = false;

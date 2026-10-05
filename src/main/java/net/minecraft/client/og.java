@@ -14,6 +14,12 @@ extends bp {
         new oy(this, minecraft, string, n2).start();
     }
 
+    /** Подключение по WebRTC: канал уже открыт, ib создан (см. hd.java). */
+    public og(Minecraft minecraft, ib handler) {
+        minecraft.a((Session)null);
+        this.a = handler;
+    }
+
     @Override
     public void g() {
         if (this.a != null) {

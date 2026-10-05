@@ -28,6 +28,12 @@ extends mo {
         this.d = new jq(socket, "Client", this);
     }
 
+    /** Подключение по готовому каналу (WebRTC, см. web/RtcSocket.java). */
+    public ib(Minecraft minecraft, Socket socket) throws IOException {
+        this.e = minecraft;
+        this.d = new jq(socket, "Client", this);
+    }
+
     public void a() {
         if (this.c) {
             return;

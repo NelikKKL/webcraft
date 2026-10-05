@@ -25,6 +25,12 @@ extends gk {
         this.j = true;
     }
 
+    /** Для хост-сервера: уже сжатые (zlib) данные чанка, как они уходят в сеть. */
+    public void setCompressed(byte[] zlibData) {
+        this.g = zlibData;
+        this.h = zlibData.length;
+    }
+
     @Override
     public void a(DataInputStream dataInputStream) {
         try {

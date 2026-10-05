@@ -1,97 +1,180 @@
-/*
- * Decompiled with CFR 0.152.
- */
 package net.minecraft.client;
-public class hd
-extends bp {
-    private bp a;
-    private int h = 0;
-    private String i = "";
 
-    public hd(bp bp2) {
-        this.a = bp2;
-    }
+import net.minecraft.client.web.Mp;
+import net.minecraft.client.web.RtcSocket;
 
-    @Override
-    public void g() {
-        ++this.h;
+/**
+ * Экран "Multiplayer" (было: ввод IP сервера). Теперь подключение идёт через WebRTC
+ * без серверов:
+ *   1. Игрок жмёт "Paste host's code" и вставляет код приглашения хоста.
+ *   2. Игра показывает код-ответ — его нужно отправить хосту (кнопка Copy).
+ *   3. Когда хост вставит ответ, канал открывается и начинается вход в мир.
+ * Подробности про коды — web/extras.js (раздел "Мультиплеер").
+ */
+public class hd extends bp {
+
+    private static final int INPUT = 0, WORKING = 1, REPLY = 2;
+
+    private final bp parent;
+    private int state = INPUT;
+    private int tick = 0;
+    private int copiedUntil = -1;
+    private boolean waitingPaste = false;
+    private String error = null;
+    private String reply = null;
+    private RtcSocket sock = null;
+    private volatile boolean opened = false;
+    private volatile boolean closed = false;
+    private boolean joined = false;
+
+    public hd(bp parent) {
+        this.parent = parent;
     }
 
     @Override
     public void a() {
+        layout();
+    }
+
+    private void layout() {
         this.e.clear();
-        this.e.add(new gh(0, this.c / 2 - 100, this.d / 4 + 96 + 12, "Connect"));
-        this.e.add(new gh(1, this.c / 2 - 100, this.d / 4 + 120 + 12, "Cancel"));
-        this.i = this.b.y.z.replaceAll("_", ":");
-        ((gh)this.e.get(0)).g = this.i.length() > 0;
+        int x = this.c / 2 - 100;
+        int y = this.d / 2 + 30;
+        if (state == INPUT) {
+            this.e.add(new gh(1, x, y, 200, 20, "Paste host's code"));
+        } else if (state == REPLY) {
+            this.e.add(new gh(2, x, y, 200, 20, tick < copiedUntil ? "Copied!" : "Copy reply code"));
+        }
+        this.e.add(new gh(0, x, y + 24, 200, 20, "Cancel"));
+    }
+
+    private void leave() {
+        if (!joined && sock != null) sock.close();
+        this.b.a(this.parent);
     }
 
     @Override
     protected void a(gh gh2) {
-        if (!gh2.g) {
-            return;
-        }
-        if (gh2.f == 1) {
-            this.b.a(this.a);
-        } else if (gh2.f == 0) {
-            this.b.y.z = this.i.replaceAll(":", "_");
-            this.b.y.b();
-            String[] stringArray = this.i.split(":");
-            this.b.a(new og(this.b, stringArray[0], stringArray.length > 1 ? this.a(stringArray[1], 25565) : 25565));
-        }
-    }
-
-    private int a(String string, int n2) {
-        try {
-            return Integer.parseInt(string.trim());
-        }
-        catch (Exception exception) {
-            return n2;
+        if (!gh2.g) return;
+        if (gh2.f == 0) {
+            leave();
+        } else if (gh2.f == 1) {
+            error = null;
+            waitingPaste = true;
+            Mp.requestPaste();
+        } else if (gh2.f == 2 && reply != null) {
+            Mp.copy(reply);
+            copiedUntil = tick + 50;
+            layout();
         }
     }
 
     @Override
     protected void a(char c2, int n2) {
-        if (c2 == '\u0016') {
-            int n3;
-            String string = bp.c();
-            if (string == null) {
-                string = "";
+        if (n2 == 1) {
+            leave();
+        } else if (c2 == '\u0016' && state == INPUT) {      // Ctrl+V
+            error = null;
+            waitingPaste = true;
+            Mp.requestPaste();
+        }
+    }
+
+    private void start(String code) {
+        state = WORKING;
+        error = null;
+        reply = null;
+        opened = false;
+        closed = false;
+        int link = Mp.newLink(null);
+        sock = new RtcSocket(link, false);
+        Mp.registerListener(link, sock);
+        sock.setExtra(new Mp.Listener() {
+            public void onOpen() { opened = true; }
+            public void onMessage(byte[] data) { }
+            public void onClose() { closed = true; }
+            public void onCode(String c, String err) {
+                if (err != null && err.length() > 0) {
+                    error = err;
+                    state = INPUT;
+                } else {
+                    reply = c;
+                    state = REPLY;
+                }
             }
-            if ((n3 = 32 - this.i.length()) > string.length()) {
-                n3 = string.length();
+            public void onAccepted(String err) { }
+        });
+        Mp.acceptInvite(link, code);
+        layout();
+    }
+
+    @Override
+    public void g() {
+        super.g();
+        ++tick;
+        int before = state;
+        if (waitingPaste) {
+            String t = Mp.consumePasted();
+            if (t != null) {
+                waitingPaste = false;
+                if (t.trim().length() > 0) start(t.trim());
             }
-            if (n3 > 0) {
-                this.i = this.i + string.substring(0, n3);
+        }
+        if (copiedUntil == tick) layout();
+        if (state != before) layout();
+        if (state == REPLY && opened && !joined) {
+            joined = true;
+            try {
+                ib handler = new ib(this.b, sock);
+                handler.a((gk)new hw(this.b.i.b));
+                this.b.a(new og(this.b, handler));
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                joined = false;
+                error = "Could not join: " + ex;
+                state = INPUT;
+                layout();
             }
+        } else if (state == REPLY && closed && !joined) {
+            error = "Connection failed (the host may be behind a strict NAT).";
+            state = INPUT;
+            if (sock != null) sock.close();
+            layout();
         }
-        if (c2 == '\r') {
-            this.a((gh)this.e.get(0));
-        }
-        if (n2 == 14 && this.i.length() > 0) {
-            this.i = this.i.substring(0, this.i.length() - 1);
-        }
-        if (" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_'abcdefghijklmnopqrstuvwxyz{|}~\u2302\u00c7\u00fc\u00e9\u00e2\u00e4\u00e0\u00e5\u00e7\u00ea\u00eb\u00e8\u00ef\u00ee\u00ec\u00c4\u00c5\u00c9\u00e6\u00c6\u00f4\u00f6\u00f2\u00fb\u00f9\u00ff\u00d6\u00dc\u00f8\u00a3\u00d8\u00d7\u0192\u00e1\u00ed\u00f3\u00fa\u00f1\u00d1\u00aa\u00ba\u00bf\u00ae\u00ac\u00bd\u00bc\u00a1\u00ab\u00bb".indexOf(c2) >= 0 && this.i.length() < 32) {
-            this.i = this.i + c2;
-        }
-        ((gh)this.e.get(0)).g = this.i.length() > 0;
     }
 
     @Override
     public void a(int n2, int n3, float f2) {
         this.i();
-        this.a(this.g, "Play Multiplayer", this.c / 2, this.d / 4 - 60 + 20, 0xFFFFFF);
-        this.b(this.g, "Minecraft Multiplayer is currently not finished, but there", this.c / 2 - 140, this.d / 4 - 60 + 60 + 0, 0xA0A0A0);
-        this.b(this.g, "is some buggy early testing going on.", this.c / 2 - 140, this.d / 4 - 60 + 60 + 9, 0xA0A0A0);
-        this.b(this.g, "Enter the IP of a server to connect to it:", this.c / 2 - 140, this.d / 4 - 60 + 60 + 36, 0xA0A0A0);
-        int n4 = this.c / 2 - 100;
-        int n5 = this.d / 4 - 10 + 50 + 18;
-        int n6 = 200;
-        int n7 = 20;
-        this.a(n4 - 1, n5 - 1, n4 + n6 + 1, n5 + n7 + 1, -6250336);
-        this.a(n4, n5, n4 + n6, n5 + n7, -16777216);
-        this.b(this.g, this.i + (this.h / 6 % 2 == 0 ? "_" : ""), n4 + 4, n5 + (n7 - 8) / 2, 0xE0E0E0);
+        int cx = this.c / 2;
+        this.a(this.g, "Play Multiplayer", cx, this.d / 2 - 92, 0xFFFFFF);
+        if (state == INPUT) {
+            this.a(this.g, "Ask the host to type /start-server and send you the code.", cx, this.d / 2 - 66, 0xA0A0A0);
+            this.a(this.g, "Copy it, then press the button below (or Ctrl+V).", cx, this.d / 2 - 54, 0xA0A0A0);
+            if (waitingPaste) {
+                this.a(this.g, "Waiting for paste (allow clipboard access)...", cx, this.d / 2 - 20, 0xE0E0E0);
+            }
+            if (error != null) {
+                this.a(this.g, error, cx, this.d / 2 - 20, 0xFF6060);
+            }
+        } else if (state == WORKING) {
+            this.a(this.g, "Creating the reply code...", cx, this.d / 2 - 40, 0xE0E0E0);
+        } else {
+            this.a(this.g, "Send this reply code to the host:", cx, this.d / 2 - 76, 0xA0A0A0);
+            int bx = cx - 100, by = this.d / 2 - 62, bw = 200, bh = 56;
+            this.a(bx - 1, by - 1, bx + bw + 1, by + bh + 1, -6250336);
+            this.a(bx, by, bx + bw, by + bh, -16777216);
+            if (reply != null) {
+                int i = 0, line = 0;
+                while (i < reply.length() && line < 5) {
+                    int j = Math.min(reply.length(), i + 32);
+                    this.a(this.g, reply.substring(i, j), cx, by + 4 + line * 10, 0xE0E0E0);
+                    i = j;
+                    line++;
+                }
+            }
+            this.a(this.g, "Waiting for the host to accept it...", cx, this.d / 2 + 4, 0xE0E0E0);
+        }
         super.a(n2, n3, f2);
     }
 }
-

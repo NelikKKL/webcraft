@@ -6,6 +6,9 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import net.minecraft.client.netshim.Socket;
+import net.minecraft.client.web.RtcSocket;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.net.SocketAddress;
 import java.net.SocketException;
 import java.util.ArrayList;
@@ -35,7 +38,21 @@ public class jq {
     private int t = 0;
     private int u = 0;
 
+    /**
+     * WebRTC-режим (мультиплеер в браузере): один пакет = одно сообщение DataChannel,
+     * потоков чтения/записи нет — всё делается в игровом тике (метод a()). Потоки
+     * TeaVM здесь не нужны, поэтому нет и зависимости от их планировщика.
+     */
+    private RtcSocket rtc = null;
+
     public jq(Socket socket, String string, mo mo2) throws SocketException, IOException {
+        if (socket instanceof RtcSocket) {
+            this.e = socket;
+            this.f = null;
+            this.m = mo2;
+            this.rtc = (RtcSocket)socket;
+            return;
+        }
         this.e = socket;
         this.f = socket.getRemoteSocketAddress();
         this.m = mo2;
@@ -53,6 +70,23 @@ public class jq {
      */
     public void a(gk gk2) {
         if (this.n) {
+            return;
+        }
+        if (this.rtc != null) {
+            if (!this.i) {
+                return;
+            }
+            try {
+                ByteArrayOutputStream bos = new ByteArrayOutputStream(64);
+                DataOutputStream dos = new DataOutputStream(bos);
+                gk.a(gk2, dos);
+                dos.flush();
+                byte[] bytes = bos.toByteArray();
+                this.rtc.sendPacket(bytes, bytes.length);
+            }
+            catch (Exception exception) {
+                this.a(exception);
+            }
             return;
         }
         Object object = this.d;
@@ -135,8 +169,14 @@ public class jq {
         }
         this.q = true;
         this.r = string;
-        new pe(this).start();
+        if (this.rtc == null) {
+            new pe(this).start();
+        }
         this.i = false;
+        if (this.rtc != null) {
+            this.rtc.close();
+            return;
+        }
         try {
             this.g.close();
             this.g = null;
@@ -161,6 +201,10 @@ public class jq {
     }
 
     public void a() {
+        if (this.rtc != null) {
+            this.pumpRtc();
+            return;
+        }
         if (this.t > 0x100000) {
             this.a("Send buffer overflow");
         }
@@ -177,6 +221,31 @@ public class jq {
             gk2.a(this.m);
         }
         if (this.q && this.j.isEmpty()) {
+            this.m.a(this.r);
+        }
+    }
+
+    /** Тик в WebRTC-режиме: разобрать пришедшие пакеты и передать их обработчику. */
+    private void pumpRtc() {
+        int budget = 200;
+        byte[] msg;
+        while (budget-- > 0 && (msg = this.rtc.poll()) != null) {
+            try {
+                gk gk2 = gk.b(new DataInputStream(new ByteArrayInputStream(msg)));
+                if (gk2 != null) {
+                    gk2.a(this.m);
+                }
+            }
+            catch (Exception exception) {
+                this.a(exception);
+                break;
+            }
+        }
+        if (this.i && this.rtc.isClosed()) {
+            this.a("Connection closed");
+        }
+        if (this.q) {
+            this.q = false;
             this.m.a(this.r);
         }
     }

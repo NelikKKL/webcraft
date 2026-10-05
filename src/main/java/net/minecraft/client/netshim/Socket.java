@@ -23,6 +23,10 @@ import java.net.SocketAddress;
  */
 public class Socket {
 
+    /** Для подклассов, у которых есть реальный транспорт (см. web/RtcSocket.java). */
+    protected Socket() {
+    }
+
     public Socket(InetAddress address, int port) throws ConnectException {
         throw new ConnectException("Multiplayer is not yet supported in the web version");
     }
