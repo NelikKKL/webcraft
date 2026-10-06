@@ -956,7 +956,9 @@ implements Runnable {
                     if (Keyboard.getEventKey() == this.y.q.b) {
                         this.g.a(this.g.e.a(this.g.e.d, 1), false);
                     }
-                    if (this.j() && Keyboard.getEventKey() == this.y.r.b) {
+                    // ИСПРАВЛЕНО: в оригинале чат открывался только в мультиплеере (this.j()), поэтому
+                    // в своём мире команды (/start-server и др.) были недоступны. Теперь чат есть всегда.
+                    if (Keyboard.getEventKey() == this.y.r.b) {
                         this.a(new dr());
                     }
                 }

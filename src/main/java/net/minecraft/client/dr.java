@@ -90,6 +90,9 @@ extends bp {
                 HostServer server = HostServer.get();
                 if (server != null && !this.b.j()) {
                     server.hostChat(string);
+                } else if (!this.b.j()) {
+                    // свой мир без сервера: просто показываем сообщение себе
+                    this.b.u.a("<" + (this.b.i != null ? this.b.i.b : "Player") + "> " + string);
                 } else {
                     this.b.g.a(string);
                 }
