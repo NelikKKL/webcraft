@@ -46,9 +46,14 @@ extends bp {
                 return;
             }
             HostServer server = HostServer.start(this.b);
-            this.b.a((bp)null);
+            // ИСПРАВЛЕНО (в окне приглашения не было курсора): раньше чат сначала закрывался
+            // (a(null) -> захват мыши), и сразу открывалось окно (снятие захвата), пока запрос
+            // pointer lock ещё не выполнился — браузер потом всё равно захватывал курсор.
+            // Теперь экран просто заменяется другим экраном, без промежуточного захвата.
             if (server != null) {
                 this.b.a(new InviteScreen(server));
+            } else {
+                this.b.a((bp)null);
             }
         } else if (cmd.equals("/stop-server")) {
             if (HostServer.isActive()) {

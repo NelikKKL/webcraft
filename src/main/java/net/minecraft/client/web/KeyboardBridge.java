@@ -157,7 +157,13 @@ public final class KeyboardBridge {
         // открывается с первого раза, как в оригинале. Так же игра ставится на паузу,
         // если окно потеряло фокус (alt-tab).
         "document.addEventListener('pointerlockchange', function() {" +
-        "  if (document.pointerLockElement) { window.__mcExpectedUnlock = false; return; }" +
+        // Захват пришёл, а игра его уже не хочет (запрос ушёл раньше, чем открылось меню, и
+        // exitPointerLock его не отменил) — тут же отпускаем, иначе в меню нет курсора.
+        "  if (document.pointerLockElement) {" +
+        "    if (!window.__wantsPointerLock) { window.__mcExpectedUnlock = true; document.exitPointerLock(); }" +
+        "    else { window.__mcExpectedUnlock = false; }" +
+        "    return;" +
+        "  }" +
         "  if (window.__mcExpectedUnlock) { window.__mcExpectedUnlock = false; return; }" +
         "  if (now() - lastRealEsc < 200) return;" +
         "  lastSynthEsc = now();" +
