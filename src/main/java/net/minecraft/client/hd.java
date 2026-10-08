@@ -17,6 +17,7 @@ public class hd extends bp {
 
     private final bp parent;
     private int state = INPUT;
+    private int laidOutState = -1;   // для какого состояния построены кнопки
     private int tick = 0;
     private int copiedUntil = -1;
     private boolean waitingPaste = false;
@@ -37,6 +38,7 @@ public class hd extends bp {
     }
 
     private void layout() {
+        laidOutState = state;
         this.e.clear();
         int x = this.c / 2 - 100;
         int y = this.d / 2 + 30;
@@ -112,7 +114,6 @@ public class hd extends bp {
     public void g() {
         super.g();
         ++tick;
-        int before = state;
         if (waitingPaste) {
             String t = Mp.consumePasted();
             if (t != null) {
@@ -121,7 +122,9 @@ public class hd extends bp {
             }
         }
         if (copiedUntil == tick) layout();
-        if (state != before) layout();
+        // ИСПРАВЛЕНО: состояние меняется из JS-колбэка МЕЖДУ тиками, поэтому сравнение "до/после"
+        // внутри g() ничего не замечало — кнопка "Copy reply code" не появлялась.
+        if (state != laidOutState) layout();
         if (state == REPLY && opened && !joined) {
             joined = true;
             try {

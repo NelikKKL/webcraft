@@ -375,7 +375,7 @@
     var fp = g(/a=fingerprint:sha-256 (\S+)/).split(':').map(function (h) { return parseInt(h, 16); });
     if (!ufrag || !pwd || fp.length !== 32) throw new Error('SDP has no ICE/DTLS data');
     var cands = [], seen = {};
-    var re = /a=candidate:\S+ 1 udp \d+ (\S+) (\d+) typ (host|srflx|relay)/g, m;
+    var re = /a=candidate:\S+ 1 udp \d+ (\S+) (\d+) typ (host|srflx|relay)/gi, m;
     while ((m = re.exec(sdp))) {
       var key = m[1] + ':' + m[2];
       if (seen[key]) continue; seen[key] = 1;
@@ -522,19 +522,27 @@
       }));
       return id;
     },
+    // Все точки входа из Java обёрнуты в try/catch: синхронное исключение (например, мусор вместо кода
+    // в буфере обмена) раньше улетало прямо в Java и ронял игру; теперь это обычное сообщение об ошибке.
     createInvite: function (id) {
-      links[id].createInvite().then(function (c) { window.__javaMp.onCode(id, c, ''); },
-        function (e) { window.__javaMp.onCode(id, '', String(e && e.message || e)); });
+      try {
+        links[id].createInvite().then(function (c) { window.__javaMp.onCode(id, c, ''); },
+          function (e) { window.__javaMp.onCode(id, '', String(e && e.message || e)); });
+      } catch (e) { window.__javaMp.onCode(id, '', String(e && e.message || e)); }
     },
     acceptAnswer: function (id, code) {
-      links[id].acceptAnswer(code).then(function () { window.__javaMp.onAccepted(id, ''); },
-        function (e) { window.__javaMp.onAccepted(id, String(e && e.message || e)); });
+      try {
+        links[id].acceptAnswer(code).then(function () { window.__javaMp.onAccepted(id, ''); },
+          function (e) { window.__javaMp.onAccepted(id, String(e && e.message || e)); });
+      } catch (e) { window.__javaMp.onAccepted(id, String(e && e.message || e)); }
     },
     acceptInvite: function (id, code) {
-      links[id].acceptInvite(code).then(function (c) { window.__javaMp.onCode(id, c, ''); },
-        function (e) { window.__javaMp.onCode(id, '', String(e && e.message || e)); });
+      try {
+        links[id].acceptInvite(code).then(function (c) { window.__javaMp.onCode(id, c, ''); },
+          function (e) { window.__javaMp.onCode(id, '', String(e && e.message || e)); });
+      } catch (e) { window.__javaMp.onCode(id, '', String(e && e.message || e)); }
     },
-    send: function (id, u8) { links[id].send(u8); },
+    send: function (id, u8) { try { links[id].send(u8); } catch (e) {} },
     close: function (id) { if (links[id]) links[id].close(); },
     isOpen: function (id) { return !!(links[id] && links[id].open); },
 

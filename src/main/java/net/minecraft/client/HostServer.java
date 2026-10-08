@@ -315,7 +315,8 @@ public final class HostServer implements jv {
         lw host = ctx.player();
         ps e = new ps(w, name);
         e.bl = null;   // не пытаться качать скин по HTTP
-        double fx = host.aw, fy = host.aG.b, fz = host.ay;
+        double[] spot = findSpawnSpot(w, host);
+        double fx = spot[0], fy = spot[1], fz = spot[2];
         e.b(fx, fy, fz, host.aC, host.aD);
         w.a((lw)e);
         g.entity = e;
@@ -365,6 +366,27 @@ public final class HostServer implements jv {
         String msg = "\u00a7e" + name + " joined the game";
         ctx.chat(msg);
         broadcast(new jr(msg));
+    }
+
+    /**
+     * Куда поставить нового гостя: рядом с хостом, на свободном месте с твёрдым полом.
+     * Раньше гость появлялся ровно в точке хоста — камера оказывалась внутри модели хоста
+     * (тёмный экран), да и тесно. Если подходящего места рядом нет — над хостом.
+     */
+    private static double[] findSpawnSpot(Session w, lw host) {
+        int hx = (int)Math.floor(host.aw), hy = (int)Math.floor(host.aG.b), hz = (int)Math.floor(host.ay);
+        int[][] offs = {{2, 0}, {-2, 0}, {0, 2}, {0, -2}, {2, 2}, {-2, -2}, {2, -2}, {-2, 2}, {3, 0}, {-3, 0}, {0, 3}, {0, -3}};
+        for (int[] o : offs) {
+            int x = hx + o[0], z = hz + o[1];
+            for (int dy = 2; dy >= -2; dy--) {
+                int y = hy + dy;
+                if (y < 1 || y > 120) continue;
+                if (w.a(x, y, z) == 0 && w.a(x, y + 1, z) == 0 && w.a(x, y - 1, z) > 0) {
+                    return new double[]{x + 0.5, y, z + 0.5};
+                }
+            }
+        }
+        return new double[]{host.aw, host.aG.b + 1.0, host.ay};
     }
 
     private static InventoryItem[] starterInventory(Player p) {

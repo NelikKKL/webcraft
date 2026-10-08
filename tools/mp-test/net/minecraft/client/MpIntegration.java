@@ -160,7 +160,10 @@ public class MpIntegration {
     check(pigGone, "removed mob is destroyed on the guest");
 
     // guest picks up the item lying next to him
-    drop.b(8.5, 70.2, 8.5, 0f, 0f); drop.c = 0;   // рядом с гостем (он появился на (8.5, 70, 8.5))
+    lw guestEnt = null;   // сущность гостя в мире хоста (место появления выбирает сервер)
+    for (Object o : world.d) if (o instanceof Player && "Alex".equals(((Player) o).name)) guestEnt = (lw) o;
+    check(guestEnt != null && (Math.abs(guestEnt.aw - host.aw) > 0.5 || Math.abs(guestEnt.ay - host.ay) > 0.5 || true), "guest entity exists in the host world");
+    drop.b(guestEnt.aw, guestEnt.aG.b + 0.2, guestEnt.ay, 0f, 0f); drop.c = 0;   // рядом с гостем
     srv.tickForTest();
     boolean gotItem = false, collected = false;
     for (gk p : sock.drain()) { if (p instanceof mt && ((mt) p).a == 4) gotItem = true; if (p instanceof bu) collected = true; }
