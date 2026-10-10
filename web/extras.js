@@ -117,7 +117,7 @@
 
   // Если все нужные файлы лежат в одной вложенной папке (MyPack/terrain.png) — срезаем её.
   function detectPrefix(entries) {
-    var known = /^(terrain\.png|pack\.png|gui\/|mob\/|misc\/|art\/|item\/|title\/|font\/|environment\/|particles\.png)/;
+    var known = /^(terrain\.png|pack\.png|gui\/|mob\/|misc\/|art\/|item\/|title\/|font\/|environment\/|particles\.png|sound\/|newsound\/|music\/|newmusic\/|streaming\/)/;
     var anyRoot = false, prefix = null;
     for (var i = 0; i < entries.length; i++) {
       var nm = entries[i].name;
@@ -146,28 +146,51 @@
     });
   }
 
-  // Разбирает zip и передаёт все PNG в Java. Возвращает Promise<число файлов>.
+  // Разбирает zip: PNG уходят в Java (текстур-пак), аудио (sound/, music/, streaming/ в любой
+  // вложенности, например resources/sound/...) — в звуковой движок. Возвращает Promise<{png, audio}>.
   function registerPack(name, buf) {
     var jt = window.__javaTP;
     var entries = readZipDirectory(buf);
     var prefix = detectPrefix(entries);
+    var skipEntry = function (nm) { return nm.endsWith('/') || nm.indexOf('__MACOSX') >= 0; };
     var pngs = entries.filter(function (e) {
-      var nm = e.name;
-      return !nm.endsWith('/') && nm.indexOf('__MACOSX') < 0 &&
-             nm.toLowerCase().endsWith('.png') && nm.indexOf(prefix) === 0;
+      return !skipEntry(e.name) && e.name.toLowerCase().endsWith('.png') && e.name.indexOf(prefix) === 0;
     });
-    jt.begin(name);
-    var i = 0;
-    function next() {
-      if (i >= pngs.length) { jt.end(name); return Promise.resolve(pngs.length); }
-      var e = pngs[i++];
-      return extractEntry(buf, e).then(decodePng).then(function (r) {
-        jt.resource(name, e.name.substring(prefix.length), r.w, r.h, r.rgba);
-      }).catch(function (err) {
-        console.warn('Texture pack: skipped', e.name, err);
-      }).then(next);
+    var audio = entries.filter(function (e) {
+      return !skipEntry(e.name) && window.Sounds && window.Sounds.isAudioFile(e.name);
+    });
+
+    function doPngs() {
+      if (!pngs.length) return Promise.resolve(0);
+      jt.begin(name);
+      var i = 0;
+      function next() {
+        if (i >= pngs.length) { jt.end(name); return Promise.resolve(pngs.length); }
+        var e = pngs[i++];
+        return extractEntry(buf, e).then(decodePng).then(function (r) {
+          jt.resource(name, e.name.substring(prefix.length), r.w, r.h, r.rgba);
+        }).catch(function (err) {
+          console.warn('Texture pack: skipped', e.name, err);
+        }).then(next);
+      }
+      return next();
     }
-    return next();
+    function doAudio() {
+      var i = 0, added = 0;
+      function next() {
+        if (i >= audio.length) return Promise.resolve(added);
+        var e = audio[i++];
+        return extractEntry(buf, e).then(function (ab) {
+          if (window.Sounds.add(e.name, new Uint8Array(ab))) added++;
+        }).catch(function (err) {
+          console.warn('Sound pack: skipped', e.name, err);
+        }).then(next);
+      }
+      return next();
+    }
+    return doPngs().then(function (png) {
+      return doAudio().then(function (snd) { return { png: png, audio: snd }; });
+    });
   }
 
   // -------------------------------------------------------------- public API
@@ -179,12 +202,15 @@
     if (!window.__javaTP) { pending.push(file); return Promise.resolve(); }
     var name = packName(file);
     return file.arrayBuffer().then(function (buf) {
-      return registerPack(name, buf).then(function (count) {
-        if (count === 0) throw new Error('no PNG textures found in ' + file.name);
+      return registerPack(name, buf).then(function (r) {
+        if (r.png === 0 && r.audio === 0) throw new Error('no PNG textures or sounds found in ' + file.name);
         return dbPut({ name: name, blob: file, added: Date.now() }).catch(function (e) {
-          console.warn('Could not save texture pack to IndexedDB:', e);
+          console.warn('Could not save pack to IndexedDB:', e);
         }).then(function () {
-          toast('Texture pack "' + name + '" added (' + count + ' files) — select it in the list');
+          var parts = [];
+          if (r.png) parts.push('texture pack "' + name + '" (' + r.png + ' files) — select it in the list');
+          if (r.audio) parts.push(r.audio + ' sounds loaded');
+          toast('Added: ' + parts.join('; '));
         });
       });
     }).catch(function (err) {
@@ -569,6 +595,290 @@
     },
     _test: { packSdp: packSdp, unpackCode: unpackCode, buildSdp: buildSdp }
   };
+
+  // ======================================================================
+  // ===== Звук (Web Audio) ===============================================
+  // ======================================================================
+  // Реализация звуковой системы поверх Web Audio API вместо paulscode/OpenAL оригинала.
+  // Раскладка ресурсов — как у оригинальной игры (папка resources/ лаунчера Alpha):
+  //   sound/<группа>/<имя>[N].ogg  и  newsound/...  — звуковые эффекты ("step/grass1.ogg" -> "step.grass",
+  //                                                   варианты 1..N выбираются случайно, как в es.java);
+  //   music/*.ogg, newmusic/*.ogg  — фоновая музыка (случайный трек раз в 10-20 минут);
+  //   streaming/*.mus (.ogg)       — пластинки (имя без расширения: "13", "cat").
+  // Файлы берутся из assets.akrile (пути sound/..., music/...) и из zip-паков, которые игрок
+  // перетаскивает на окно/выбирает в меню (см. раздел "Текстур-паки"). Если файла для звука нет,
+  // он синтезируется процедурно (шаги, клики, мобы и т.д.) — игра не молчит.
+  var Sounds = (function () {
+    var AUDIO_EXT = /\.(ogg|wav|mus|mp3|m4a|flac)$/i;
+    var ctx = null, master = null, unlocked = false;
+    var pool = { sound: {}, music: [], stream: {} };     // sound: name -> [entry], music: [entry], stream: name -> [entry]
+    var activeVoices = 0, MAX_VOICES = 40;
+    var music = null, musicVol = 1, stream = null, streamVol = 1;
+    var synthCache = {};
+
+    function mimeFor(path) {
+      if (/\.wav$/i.test(path)) return 'audio/wav';
+      if (/\.mp3$/i.test(path)) return 'audio/mpeg';
+      if (/\.m4a$/i.test(path)) return 'audio/mp4';
+      if (/\.flac$/i.test(path)) return 'audio/flac';
+      return 'audio/ogg';        // .ogg и .mus (оригинальные .mus — это Ogg Vorbis)
+    }
+
+    function ensureCtx() {
+      if (!ctx) {
+        try {
+          var AC = window.AudioContext || window.webkitAudioContext;
+          if (!AC) return null;
+          ctx = new AC();
+          master = ctx.createGain();
+          master.gain.value = 1;
+          master.connect(ctx.destination);
+        } catch (e) { return null; }
+      }
+      if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
+      return ctx;
+    }
+
+    // Браузер не даёт играть звук до первого жеста пользователя — ловим его.
+    function unlock() {
+      unlocked = true;
+      ensureCtx();
+      ['pointerdown', 'keydown', 'touchstart', 'mousedown'].forEach(function (ev) { window.removeEventListener(ev, unlock, true); });
+      setTimeout(function () { try { warmup(); } catch (e) {} }, 400);
+    }
+    ['pointerdown', 'keydown', 'touchstart', 'mousedown'].forEach(function (ev) { window.addEventListener(ev, unlock, true); });
+
+    // Нормализация пути ресурса в (группа, имя). Правило имени — как в es.a(String, File).
+    function classify(path) {
+      var p = String(path).replace(/\\/g, '/').replace(/^\/+/, '');
+      var low = p.toLowerCase();
+      if (!AUDIO_EXT.test(low)) return null;
+      var m = /^(?:.*?\/)?(sound|newsound|music|newmusic|streaming)\/(.+)$/.exec(low);
+      if (!m) return null;
+      var group = m[1], rest = m[2];
+      var name = rest.substring(0, rest.indexOf('.')).replace(/\//g, '.');
+      if (group === 'sound' || group === 'newsound') {
+        name = name.replace(/\d+$/, '');
+        return { kind: 'sound', name: name, key: group + '/' + rest };
+      }
+      if (group === 'music' || group === 'newmusic') return { kind: 'music', name: name, key: group + '/' + rest };
+      return { kind: 'stream', name: name, key: group + '/' + rest };
+    }
+
+    function upsert(list, entry) {
+      for (var i = 0; i < list.length; i++) if (list[i].key === entry.key) { list[i] = entry; return; }
+      list.push(entry);
+    }
+
+    // Регистрация файла (байты). Повторная регистрация того же пути заменяет файл (паки перекрывают встроенные).
+    function add(path, bytes) {
+      var c = classify(path);
+      if (!c) return false;
+      var entry = { key: c.key, path: path, bytes: bytes, buf: null, loading: null, url: null };
+      if (c.kind === 'sound') { (pool.sound[c.name] = pool.sound[c.name] || []); upsert(pool.sound[c.name], entry); }
+      else if (c.kind === 'music') upsert(pool.music, entry);
+      else { (pool.stream[c.name] = pool.stream[c.name] || []); upsert(pool.stream[c.name], entry); }
+      return true;
+    }
+
+    function decode(entry) {
+      if (entry.buf) return Promise.resolve(entry.buf);
+      if (entry.loading) return entry.loading;
+      var c = ensureCtx();
+      if (!c) return Promise.reject(new Error('no AudioContext'));
+      var copy = entry.bytes.buffer.slice(entry.bytes.byteOffset, entry.bytes.byteOffset + entry.bytes.byteLength);
+      entry.loading = new Promise(function (resolve, reject) {
+        var p = c.decodeAudioData(copy, resolve, reject);
+        if (p && p.then) p.then(resolve, reject);
+      }).then(function (b) { entry.buf = b; entry.loading = null; return b; },
+              function (e) { entry.loading = null; entry.bad = true; throw e; });
+      return entry.loading;
+    }
+
+    function pick(list) {
+      var ok = list.filter(function (e) { return !e.bad; });
+      return ok.length ? ok[(Math.random() * ok.length) | 0] : null;
+    }
+
+    // ------------------------------------------------------------ синтезатор
+    function noise(n, lp, rnd) {          // белый шум с односполюсным ФНЧ (lp 0..1: больше = ярче)
+      var out = new Float32Array(n), y = 0;
+      for (var i = 0; i < n; i++) { y += lp * ((rnd() * 2 - 1) - y); out[i] = y; }
+      return out;
+    }
+    function seeded(seed) { var s = seed >>> 0 || 1; return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+    function env(i, n, a, d) { var t = i / n; return (t < a ? t / a : Math.pow(1 - (t - a) / (1 - a), d)); }
+
+    function synth(name, variant) {
+      var c = ensureCtx(); if (!c) return null;
+      var key = name + '#' + variant;
+      if (synthCache[key]) return synthCache[key];
+      var sr = c.sampleRate, rnd = seeded(variant * 7919 + name.length * 131 + name.charCodeAt(name.length - 1));
+      var parts = name.split('.'), grp = parts[0], sub = parts.slice(1).join('.');
+      var dur = 0.18, data;
+      function make(d, fn) { dur = d; var n = Math.max(1, (d * sr) | 0), a = new Float32Array(n); fn(a, n); return a; }
+      var soft = { grass: 0.28, sand: 0.22, cloth: 0.12, gravel: 0.55, wood: 0.18, stone: 0.7, glass: 0.9 };
+      if (grp === 'step' || grp === 'dig') {
+        var mat = soft[sub] !== undefined ? sub : 'stone', lp = soft[mat], dig = grp === 'dig';
+        data = make(dig ? 0.24 : 0.13, function (a, n) {
+          var nz = noise(n, lp, rnd), f = mat === 'wood' ? 150 + rnd() * 30 : 0;
+          for (var i = 0; i < n; i++) {
+            var e = env(i, n, 0.02, mat === 'gravel' ? 3 : 4);
+            if (mat === 'gravel' && (i % ((sr * 0.012) | 0)) < 40) e *= 1.6;
+            var v = nz[i] * e * (dig ? 1.1 : 0.7);
+            if (f) v += Math.sin(2 * Math.PI * f * i / sr) * e * 0.5;
+            if (mat === 'stone' || mat === 'glass') v += Math.sin(2 * Math.PI * (mat === 'glass' ? 2400 : 900) * i / sr) * e * e * 0.25;
+            a[i] = v;
+          }
+        });
+      } else if (grp === 'random') {
+        if (sub === 'click') data = make(0.05, function (a, n) { for (var i = 0; i < n; i++) a[i] = Math.sin(2 * Math.PI * 1500 * i / sr) * env(i, n, 0.01, 6) * 0.5 + (i < 8 ? 0.4 : 0); });
+        else if (sub === 'pop') data = make(0.09, function (a, n) { for (var i = 0; i < n; i++) { var t = i / n; a[i] = Math.sin(2 * Math.PI * (350 + 500 * t) * i / sr) * env(i, n, 0.05, 2) * 0.55; } });
+        else if (sub === 'bow') data = make(0.3, function (a, n) { var nz = noise(n, 0.4, rnd); for (var i = 0; i < n; i++) { var t = i / n; a[i] = (Math.sin(2 * Math.PI * (260 - 120 * t) * i / sr) * 0.5 + nz[i] * 0.3) * env(i, n, 0.01, 3); } });
+        else if (sub === 'explode') data = make(1.1, function (a, n) { var nz = noise(n, 0.07, rnd); for (var i = 0; i < n; i++) a[i] = nz[i] * 3.2 * env(i, n, 0.005, 2.2) + Math.sin(2 * Math.PI * 45 * i / sr) * env(i, n, 0.01, 3) * 0.5; });
+        else if (sub === 'splash') data = make(0.4, function (a, n) { var nz = noise(n, 0.35, rnd); for (var i = 0; i < n; i++) a[i] = nz[i] * 1.6 * env(i, n, 0.04, 2.5); });
+        else if (sub === 'fizz' || sub === 'fuse') data = make(sub === 'fuse' ? 0.6 : 0.35, function (a, n) { var nz = noise(n, 0.95, rnd); for (var i = 0; i < n; i++) a[i] = nz[i] * 0.45 * env(i, n, 0.1, 1.5); });
+        else if (sub === 'door_open' || sub === 'door_close') data = make(0.3, function (a, n) { var nz = noise(n, 0.12, rnd), up = sub === 'door_open'; for (var i = 0; i < n; i++) { var t = i / n; a[i] = (nz[i] * 1.2 + Math.sin(2 * Math.PI * (up ? 120 + 180 * t : 300 - 180 * t) * i / sr) * 0.35) * env(i, n, 0.08, 2); } });
+        else if (sub === 'glass') data = make(0.3, function (a, n) { var nz = noise(n, 0.97, rnd); for (var i = 0; i < n; i++) a[i] = (nz[i] * 0.5 + Math.sin(2 * Math.PI * 3100 * i / sr) * 0.2) * env(i, n, 0.005, 5); });
+        else if (sub === 'hurt') data = make(0.3, function (a, n) { for (var i = 0; i < n; i++) { var t = i / n, ph = 2 * Math.PI * (210 - 90 * t) * i / sr; a[i] = (Math.sin(ph) + 0.4 * Math.sin(2 * ph)) * env(i, n, 0.03, 2) * 0.45; } });
+        else if (sub === 'drr') data = make(0.25, function (a, n) { for (var i = 0; i < n; i++) a[i] = Math.sign(Math.sin(2 * Math.PI * 95 * i / sr)) * env(i, n, 0.03, 2) * 0.25; });
+        else data = make(0.12, function (a, n) { var nz = noise(n, 0.5, rnd); for (var i = 0; i < n; i++) a[i] = nz[i] * env(i, n, 0.02, 4); });
+      } else if (grp === 'mob' || grp === 'damage') {
+        var base = 130, len = 0.45, kind = 'voc';
+        if (/pig/.test(sub)) { base = 190; len = /death/.test(sub) ? 0.6 : 0.3; } else if (/cow/.test(sub)) { base = 105; len = 0.7; }
+        else if (/sheep/.test(sub)) { base = 330; len = 0.55; } else if (/chicken/.test(sub)) { base = 700; len = 0.15; }
+        else if (/zombiepig/.test(sub)) { base = 150; len = 0.5; } else if (/zombie/.test(sub)) { base = 85; len = 0.7; }
+        else if (/skeleton/.test(sub)) { kind = 'rattle'; len = 0.3; } else if (/creeper/.test(sub)) { kind = 'hiss'; len = 0.5; }
+        else if (/spider/.test(sub)) { kind = 'hiss'; len = 0.3; } else if (/slime/.test(sub)) { kind = 'squish'; len = 0.25; }
+        else if (/ghast/.test(sub)) { base = 520; len = 0.9; }
+        data = make(len, function (a, n) {
+          var nz = noise(n, 0.5, rnd), jit = 1 + (rnd() - 0.5) * 0.15;
+          for (var i = 0; i < n; i++) {
+            var t = i / n, e = env(i, n, 0.08, 1.7);
+            if (kind === 'hiss') a[i] = nz[i] * 0.7 * e;
+            else if (kind === 'rattle') a[i] = (((i % ((sr * 0.035) | 0)) < 90) ? (rnd() * 2 - 1) : 0) * e * 0.8;
+            else if (kind === 'squish') a[i] = Math.sin(2 * Math.PI * (160 + 420 * t) * i / sr) * e * 0.5;
+            else { var f = base * jit * (1 + 0.05 * Math.sin(2 * Math.PI * 6 * t)) * (1 - 0.15 * t), ph = 2 * Math.PI * f * i / sr; a[i] = ((ph % (2 * Math.PI)) / Math.PI - 1) * 0.35 * e + nz[i] * 0.12 * e; }
+          }
+        });
+      } else if (grp === 'liquid') {
+        data = make(0.5, function (a, n) { var nz = noise(n, 0.2, rnd); for (var i = 0; i < n; i++) a[i] = nz[i] * 0.9 * env(i, n, 0.3, 1.2) * (0.6 + 0.4 * Math.sin(2 * Math.PI * 9 * i / sr)); });
+      } else if (grp === 'fire') {
+        data = make(sub === 'ignite' ? 0.4 : 0.35, function (a, n) { var nz = noise(n, sub === 'ignite' ? 0.5 : 0.9, rnd); for (var i = 0; i < n; i++) a[i] = nz[i] * (sub === 'fire' ? (rnd() < 0.02 ? 1.4 : 0.15) : 0.8) * env(i, n, 0.1, 1.6); });
+      } else if (grp === 'portal') {
+        data = make(1.2, function (a, n) { for (var i = 0; i < n; i++) { var t = i / n; a[i] = Math.sin(2 * Math.PI * (110 + 90 * Math.sin(t * 6)) * i / sr) * env(i, n, 0.3, 1.4) * 0.4; } });
+      } else if (grp === 'ambient') {
+        data = make(2.5, function (a, n) { var nz = noise(n, 0.03, rnd); for (var i = 0; i < n; i++) a[i] = nz[i] * 5 * env(i, n, 0.4, 1.3); });
+      } else {
+        data = make(0.1, function (a, n) { var nz = noise(n, 0.5, rnd); for (var i = 0; i < n; i++) a[i] = nz[i] * env(i, n, 0.02, 4); });
+      }
+      var buf = c.createBuffer(1, data.length, sr); buf.getChannelData(0).set(data);
+      synthCache[key] = buf; return buf;
+    }
+
+    // ------------------------------------------------------------ воспроизведение эффектов
+    function startBuffer(buf, x, y, z, gain, pitch, positional, maxDist) {
+      var c = ensureCtx(); if (!c || !unlocked || activeVoices >= MAX_VOICES) return false;
+      var src = c.createBufferSource(); src.buffer = buf;
+      src.playbackRate.value = Math.max(0.25, Math.min(4, pitch || 1));
+      var g = c.createGain(); g.gain.value = Math.max(0, Math.min(1, gain));
+      var out = g;
+      src.connect(g);
+      if (positional) {
+        var p = c.createPanner();
+        p.panningModel = 'equalpower'; p.distanceModel = 'linear';
+        p.refDistance = 1; p.maxDistance = Math.max(2, maxDist || 16); p.rolloffFactor = 1;
+        if (p.positionX) { p.positionX.value = x; p.positionY.value = y; p.positionZ.value = z; } else p.setPosition(x, y, z);
+        g.connect(p); out = p;
+      }
+      out.connect(master);
+      activeVoices++;
+      src.onended = function () { activeVoices--; try { src.disconnect(); out.disconnect(); } catch (e) {} };
+      src.start();
+      return true;
+    }
+
+    // name: "step.grass"; gain уже включает громкость настроек; positional — 3D; maxDist — радиус затухания
+    function play(name, x, y, z, gain, pitch, positional, maxDist) {
+      if (!unlocked || gain <= 0) return false;
+      var c = ensureCtx(); if (!c) return false;
+      var list = pool.sound[name];
+      var entry = list && list.length ? pick(list) : null;
+      if (entry) {
+        if (entry.buf) return startBuffer(entry.buf, x, y, z, gain, pitch, positional, maxDist);
+        decode(entry).then(function (b) { startBuffer(b, x, y, z, gain, pitch, positional, maxDist); },
+                           function () { var s = synth(name, 0); if (s) startBuffer(s, x, y, z, gain, pitch, positional, maxDist); });
+        return true;
+      }
+      var buf = synth(name, (Math.random() * 3) | 0);
+      return buf ? startBuffer(buf, x, y, z, gain, pitch, positional, maxDist) : false;
+    }
+
+    function setListener(x, y, z, lx, ly, lz) {
+      var c = ctx; if (!c) return;
+      var L = c.listener;
+      if (L.positionX) {
+        L.positionX.value = x; L.positionY.value = y; L.positionZ.value = z;
+        L.forwardX.value = lx; L.forwardY.value = ly; L.forwardZ.value = lz;
+        L.upX.value = 0; L.upY.value = 1; L.upZ.value = 0;
+      } else { L.setPosition(x, y, z); L.setOrientation(lx, ly, lz, 0, 1, 0); }
+    }
+
+    // ------------------------------------------------------------ музыка и пластинки (потоково, через <audio>)
+    function makeAudio(entry) {
+      if (!entry.url) entry.url = URL.createObjectURL(new Blob([entry.bytes], { type: mimeFor(entry.path) }));
+      var a = new Audio(entry.url); a.preload = 'auto'; return a;
+    }
+    function stopEl(el) { if (el) { try { el.pause(); } catch (e) {} el.removeAttribute && el.removeAttribute('src'); } }
+
+    function startMusic(vol) {
+      if (!unlocked) return false;
+      var e = pick(pool.music); if (!e) return false;
+      stopEl(music); musicVol = vol;
+      var a = makeAudio(e); music = a; a.volume = Math.max(0, Math.min(1, vol));
+      a.onended = function () { if (music === a) music = null; };
+      a.onerror = function () { e.bad = true; if (music === a) music = null; };
+      var p = a.play(); if (p && p.catch) p.catch(function () { if (music === a) music = null; });
+      return true;
+    }
+    function startStream(name, vol) {
+      if (!unlocked) return false;
+      var e = pick(pool.stream[name] || []); if (!e) return false;
+      stopEl(stream); streamVol = vol;
+      var a = makeAudio(e); stream = a; a.volume = Math.max(0, Math.min(1, vol));
+      a.onended = function () { if (stream === a) stream = null; };
+      a.onerror = function () { e.bad = true; if (stream === a) stream = null; };
+      var p = a.play(); if (p && p.catch) p.catch(function () { if (stream === a) stream = null; });
+      return true;
+    }
+
+    // Фоновая декодировка небольших эффектов, чтобы первый звук не запаздывал
+    function warmup() {
+      var names = Object.keys(pool.sound), i = 0;
+      (function next() {
+        if (!ctx || i >= names.length) return;
+        var list = pool.sound[names[i++]], k = 0;
+        (function one() { if (k >= list.length) return setTimeout(next, 0); var e = list[k++]; if (e.bytes.length > 400000) return one(); decode(e).then(one, one); })();
+      })();
+    }
+
+    return {
+      add: add, play: play, setListener: setListener, warmup: warmup,
+      music: startMusic, hasMusic: function () { return pool.music.some(function (e) { return !e.bad; }); },
+      musicPlaying: function () { return !!music && !music.paused && !music.ended; },
+      musicVolume: function (v) { musicVol = v; if (music) music.volume = Math.max(0, Math.min(1, v)); },
+      stopMusic: function () { stopEl(music); music = null; },
+      stream: startStream, hasStream: function (n) { return !!(pool.stream[n] && pool.stream[n].length); },
+      streamPlaying: function () { return !!stream && !stream.paused && !stream.ended; },
+      streamVolume: function (v) { streamVol = v; if (stream) stream.volume = Math.max(0, Math.min(1, v)); },
+      stopStream: function () { stopEl(stream); stream = null; },
+      isUnlocked: function () { return unlocked; },
+      isAudioFile: function (n) { return AUDIO_EXT.test(n) && !!classify(n); },
+      stats: function () { var s = 0, f = 0; Object.keys(pool.sound).forEach(function (k) { s++; f += pool.sound[k].length; }); return { sounds: s, soundFiles: f, music: pool.music.length, streams: Object.keys(pool.stream).length, voices: activeVoices, ctx: ctx ? ctx.state : 'none' }; },
+      _test: { classify: classify, synth: synth, ensureCtx: ensureCtx, forceUnlock: unlock, decode: decode, pool: pool }
+    };
+  })();
+  window.Sounds = Sounds;
 
   // Drag & drop на окно игры: .zip — текстур-пак, .png — скин.
   window.addEventListener('dragover', function (e) {

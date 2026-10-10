@@ -1,0 +1,12 @@
+package net.minecraft.client.web;
+import java.util.*;
+public final class Sfx {
+  public static final List<String> log = new ArrayList<>();
+  public static boolean music = true, musicPlaying = false, canStart = true, streamPlaying = false, stream13 = true;
+  public static boolean play(String n, float x, float y, float z, float g, float p, boolean pos, float d) { log.add(String.format(Locale.ROOT,"play %s g=%.3f p=%.2f pos=%b d=%.0f",n,g,p,pos,d)); return true; }
+  public static void listener(float x,float y,float z,float lx,float ly,float lz){ log.add(String.format(Locale.ROOT,"listener %.1f,%.1f,%.1f look %.2f,%.2f,%.2f",x,y,z,lx,ly,lz)); }
+  public static boolean hasMusic(){return music;} public static boolean startMusic(float v){ log.add("startMusic "+v); if(canStart) musicPlaying=true; return canStart; }
+  public static boolean musicPlaying(){return musicPlaying;} public static void musicVolume(float v){log.add("musicVol "+v);} public static void stopMusic(){log.add("stopMusic"); musicPlaying=false;}
+  public static boolean hasStream(String n){return stream13&&n.equals("13");} public static boolean startStream(String n,float v){log.add("startStream "+n+" "+v); streamPlaying=true; return true;}
+  public static boolean streamPlaying(){return streamPlaying;} public static void streamVolume(float v){} public static void stopStream(){log.add("stopStream"); streamPlaying=false;}
+}

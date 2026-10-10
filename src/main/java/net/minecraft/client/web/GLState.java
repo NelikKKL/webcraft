@@ -59,12 +59,20 @@ public final class GLState {
     private int currentMatrixMode = MODELVIEW;
     public final float[] projection = new float[16];
     public final float[] modelview = new float[16];
-    // PERF: стек матриц на заранее выделенных массивах — раньше каждый
-    // glPushMatrix делал current().clone() (новый float[16]) + ArrayDeque.
-    // Семантика прежняя: один общий стек для обоих режимов матрицы, pop
-    // восстанавливает в ТЕКУЩУЮ матрицу, лишний pop — no-op.
-    private float[][] matrixStack = new float[64][16];
-    private int matrixSp = 0;
+    // Стеки матриц: ОТДЕЛЬНЫЙ стек на каждый режим (проекция / модельвид), как в настоящем OpenGL.
+    // ИСПРАВЛЕНО ("не отображаются сплеши, версия и надпись Copyright в главном меню"): раньше стек был
+    // один общий на оба режима. Последовательность логотипа в dj.java —
+    //   MatrixMode(PROJECTION); Push; ...; MatrixMode(MODELVIEW); Push; ...;
+    //   MatrixMode(PROJECTION); Pop; MatrixMode(MODELVIEW); Pop;
+    // — при общем стеке меняла проекцию и модельвид местами (в проекцию попадал модельвид с
+    // translate(0,0,-2000)), и весь текст после логотипа уезжал за экран. Кнопки появлялись только
+    // потому, что перед ними в dj.java стоит ручной сброс состояния.
+    // PERF: стеки на заранее выделенных массивах (без clone() на каждый glPushMatrix).
+    // Лишний pop — no-op (как и раньше).
+    private float[][] projStack = new float[16][16];
+    private int projSp = 0;
+    private float[][] mvStack = new float[64][16];
+    private int mvSp = 0;
 
     public void matrixMode(int mode) {
         this.currentMatrixMode = mode;
@@ -84,18 +92,30 @@ public final class GLState {
     }
 
     public void pushMatrix() {
-        if (matrixSp == matrixStack.length) {
-            float[][] bigger = new float[matrixStack.length * 2][];
-            System.arraycopy(matrixStack, 0, bigger, 0, matrixSp);
-            for (int i = matrixSp; i < bigger.length; i++) bigger[i] = new float[16];
-            matrixStack = bigger;
+        if (currentMatrixMode == PROJECTION) {
+            if (projSp == projStack.length) {
+                float[][] bigger = new float[projStack.length * 2][];
+                System.arraycopy(projStack, 0, bigger, 0, projSp);
+                for (int i = projSp; i < bigger.length; i++) bigger[i] = new float[16];
+                projStack = bigger;
+            }
+            System.arraycopy(projection, 0, projStack[projSp++], 0, 16);
+        } else {
+            if (mvSp == mvStack.length) {
+                float[][] bigger = new float[mvStack.length * 2][];
+                System.arraycopy(mvStack, 0, bigger, 0, mvSp);
+                for (int i = mvSp; i < bigger.length; i++) bigger[i] = new float[16];
+                mvStack = bigger;
+            }
+            System.arraycopy(modelview, 0, mvStack[mvSp++], 0, 16);
         }
-        System.arraycopy(current(), 0, matrixStack[matrixSp++], 0, 16);
     }
 
     public void popMatrix() {
-        if (matrixSp > 0) {
-            System.arraycopy(matrixStack[--matrixSp], 0, current(), 0, 16);
+        if (currentMatrixMode == PROJECTION) {
+            if (projSp > 0) System.arraycopy(projStack[--projSp], 0, projection, 0, 16);
+        } else {
+            if (mvSp > 0) System.arraycopy(mvStack[--mvSp], 0, modelview, 0, 16);
         }
     }
 

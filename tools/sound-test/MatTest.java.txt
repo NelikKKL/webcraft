@@ -1,0 +1,26 @@
+package net.minecraft.client.web;
+public class MatTest {
+  static boolean eq(float[] a, float[] b){ for(int i=0;i<16;i++) if(a[i]!=b[i]) return false; return true; }
+  public static void main(String[] x) {
+    WebGL2 gl = (WebGL2) java.lang.reflect.Proxy.newProxyInstance(MatTest.class.getClassLoader(), new Class<?>[]{WebGL2.class}, (proxy, m, args) -> {
+      Class<?> r = m.getReturnType();
+      if (r == boolean.class) return true; if (r == int.class) return 1; if (r == float.class) return 1f; if (r == double.class) return 1.0; if (r == void.class) return null;
+      return null; });
+    GLState s = new GLState(gl);
+    // 2D menu state: ortho projection + modelview translate(0,0,-2000)
+    s.matrixMode(5889); s.loadIdentity(); s.ortho(0,427,240,0,1000,3000);
+    s.matrixMode(5888); s.loadIdentity(); s.translatef(0,0,-2000);
+    float[] P0 = s.projection.clone(), M0 = s.modelview.clone();
+    // the exact sequence of dj.a(float) (menu logo)
+    s.matrixMode(5889); s.pushMatrix(); s.loadIdentity(); s.frustum(-1,1,-.5,.5,0.05,100);
+    s.matrixMode(5888); s.pushMatrix(); s.loadIdentity();
+    for (int i = 0; i < 3; i++) { s.pushMatrix(); s.translatef(0.4f,0.6f,-13f); s.scalef(1,-1,1); s.popMatrix(); }
+    s.matrixMode(5889); s.popMatrix();
+    s.matrixMode(5888); s.popMatrix();
+    System.out.println("projection restored: " + eq(s.projection, P0) + ", modelview restored: " + eq(s.modelview, M0));
+    // extra pop must be harmless
+    s.popMatrix(); s.matrixMode(5889); s.popMatrix();
+    System.out.println("extra pops harmless: " + (eq(s.projection, P0)));
+    System.exit(eq(s.projection,P0) && eq(s.modelview,M0) ? 0 : 1);
+  }
+}

@@ -126,7 +126,12 @@ public final class ResourcePreloader {
         "    }" +
         "    var entry = entries[done];" +
         "    var isText = entry.name.toLowerCase().endsWith('.txt');" +
-        "    var step = isText" +
+        // Звуки (sound/, music/, streaming/ ...) идут в звуковой движок как есть; декодирует их
+        // Web Audio позже, по первому использованию (см. extras.js, раздел "Звук").
+        "    var isAudio = !isText && window.Sounds && window.Sounds.isAudioFile(entry.name);" +
+        "    var step = isAudio" +
+        "      ? entry.async('uint8array').then(function(bytes) { window.Sounds.add(entry.name, bytes); })" +
+        "      : isText" +
         "      ? entry.async('text').then(function(text) { onText('/' + entry.name, text); })" +
         "      : entry.async('blob').then(function(blob) {" +
         "          return createImageBitmap(blob);" +
