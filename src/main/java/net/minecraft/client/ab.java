@@ -49,6 +49,9 @@ public class ab {
     public static byte[] a(NBTCompoundTag iq2) throws IOException {
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
         try (DataOutputStream dataOutputStream = new DataOutputStream(new GZIPOutputStream(byteArrayOutputStream));){
+            // ИСПРАВЛЕНО (ошибка декомпилятора CFR: тело try потерялось): раньше метод возвращал ПУСТОЙ gzip-поток,
+            // из-за чего пакет tile entity (сундуки, печи, таблички в мультиплеере) приходил без данных.
+            ab.a(iq2, (DataOutput)dataOutputStream);
         }
         return byteArrayOutputStream.toByteArray();
     }

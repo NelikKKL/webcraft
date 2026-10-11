@@ -56,6 +56,7 @@ public final class Shaders {
         "uniform vec4 uFogColor;\n" +
         "uniform vec4 uColorMult;\n" + // текущий glColor4f (используется вместе с per-vertex цветом или вместо)
         "uniform bool uNearest;\n" +   // текстура запрошена с GL_NEAREST: читаем тексели напрямую
+        "uniform bool uClamp;\n" +     // режим обёртки CLAMP (иначе REPEAT)
         "uniform int uAlphaFunc;\n" +  // 0 = alpha test выкл, 1 = GREATER, 2 = GEQUAL
         "uniform float uAlphaRef;\n" +
         "out vec4 outColor;\n" +
@@ -67,7 +68,9 @@ public final class Shaders {
         "  if (uNearest) {\n" +
         "    ivec2 sz = textureSize(uTexture, 0);\n" +
         "    ivec2 t = ivec2(floor(uv * vec2(sz)));\n" +
-        "    t = ((t % sz) + sz) % sz;\n" +
+        // ИСПРАВЛЕНО (много обрезанных копий тени под игроком): раньше всегда REPEAT, а тень
+        // (misc/shadow.png) загружается с CLAMP — за пределами 0..1 нужно повторять КРАЙНИЙ тексель.
+        "    t = uClamp ? clamp(t, ivec2(0), sz - ivec2(1)) : ((t % sz) + sz) % sz;\n" +
         "    return texelFetch(uTexture, t, 0);\n" +
         "  }\n" +
         "  return texture(uTexture, uv);\n" +
@@ -113,7 +116,7 @@ public final class Shaders {
     public final WebGLUniformLocation uLightDir0, uLightDir1, uLightColor0, uLightColor1, uAmbient;
     public final WebGLUniformLocation uUseFog, uFogMode, uFogDensity, uFogStart, uFogEnd, uFogColor;
     public final WebGLUniformLocation uColorMult;
-    public final WebGLUniformLocation uNearest, uAlphaFunc, uAlphaRef;
+    public final WebGLUniformLocation uNearest, uClamp, uAlphaFunc, uAlphaRef;
 
     Shaders(WebGL2 gl) {
         WebGLShader vs = compile(gl, 35633 /*VERTEX_SHADER*/, VERTEX_SRC);
@@ -144,6 +147,7 @@ public final class Shaders {
         uFogColor = gl.getUniformLocation(program, "uFogColor");
         uColorMult = gl.getUniformLocation(program, "uColorMult");
         uNearest = gl.getUniformLocation(program, "uNearest");
+        uClamp = gl.getUniformLocation(program, "uClamp");
         uAlphaFunc = gl.getUniformLocation(program, "uAlphaFunc");
         uAlphaRef = gl.getUniformLocation(program, "uAlphaRef");
     }

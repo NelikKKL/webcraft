@@ -11,6 +11,11 @@ extends Player {
     private double by;
     private double bz;
     float a = 0.0f;
+    /**
+     * true — это сущность гостя в мире ХОСТА (HostServer): она получает урон от мобов и падений.
+     * false — обычный удалённый игрок на клиенте (неуязвимый, как в оригинале).
+     */
+    public boolean takesDamage = false;
 
     public ps(Session cy2, String string) {
         super(cy2);
@@ -27,7 +32,7 @@ extends Player {
 
     @Override
     public boolean a(lw lw2, int n2) {
-        return true;
+        return this.takesDamage ? super.a(lw2, n2) : true;
     }
 
     @Override
@@ -55,9 +60,14 @@ extends Player {
         this.X += this.W;
     }
 
+    /**
+     * Смещение "глаз" для стрел/снежков (Player.v() = 0.12 отсчитывается от высоты ГЛАЗ, а у ps позиция —
+     * на уровне ног). Для сущности гостя в мире хоста добавляем рост игрока, иначе стрела вылетала бы из ног.
+     * (i_() не трогаем: он нужен для высоты тени.)
+     */
     @Override
-    public float i_() {
-        return 0.0f;
+    public float v() {
+        return this.takesDamage ? 1.62f + 0.12f : super.v();
     }
 
     @Override

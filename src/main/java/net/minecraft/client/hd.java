@@ -48,6 +48,9 @@ public class hd extends bp {
             this.e.add(new gh(2, x, y, 200, 20, tick < copiedUntil ? "Copied!" : "Copy reply code"));
         }
         this.e.add(new gh(0, x, y + 24, 200, 20, "Cancel"));
+        if (state == INPUT) {
+            this.e.add(new gh(3, x, y + 48, 200, 20, "Network: " + (Mp.isLanOnly() ? "LAN only (no internet)" : "Auto (LAN + internet)")));
+        }
     }
 
     private void leave() {
@@ -64,6 +67,9 @@ public class hd extends bp {
             error = null;
             waitingPaste = true;
             Mp.requestPaste();
+        } else if (gh2.f == 3) {
+            Mp.setLanOnly(!Mp.isLanOnly());
+            layout();
         } else if (gh2.f == 2 && reply != null) {
             Mp.copy(reply);
             copiedUntil = tick + 50;
@@ -177,6 +183,9 @@ public class hd extends bp {
                 }
             }
             this.a(this.g, "Waiting for the host to accept it...", cx, this.d / 2 + 4, 0xE0E0E0);
+            if (sock != null && "lan".equals(Mp.netMode(sock.linkId()))) {
+                this.a(this.g, "LAN: you must be in the same network as the host.", cx, this.d / 2 + 80, 0x808080);
+            }
         }
         super.a(n2, n3, f2);
     }

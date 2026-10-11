@@ -12,7 +12,7 @@ import net.minecraft.client.web.Mp;
 public class InviteScreen extends bp {
 
     private final HostServer server;
-    private final HostServer.Invite invite;
+    private HostServer.Invite invite;
     private int tick = 0;
     private int copiedUntil = -1;
     private boolean waitingPaste = false;
@@ -31,6 +31,11 @@ public class InviteScreen extends bp {
         this.e.add(new gh(1, x, this.d / 2 + 14, 98, 20, "Copy code"));
         this.e.add(new gh(2, x + 102, this.d / 2 + 14, 98, 20, "Paste reply"));
         this.e.add(new gh(0, x, this.d / 2 + 38, 200, 20, "Close"));
+        this.e.add(new gh(3, x, this.d / 2 + 62, 200, 20, netLabel()));
+    }
+
+    private static String netLabel() {
+        return "Network: " + (Mp.isLanOnly() ? "LAN only (no internet)" : "Auto (LAN + internet)");
     }
 
     private void close() {
@@ -54,6 +59,14 @@ public class InviteScreen extends bp {
                 note = null;
                 Mp.requestPaste();
             }
+        } else if (gh2.f == 3 && invite.playerName == null && !invite.connected) {
+            // Смена режима сети требует нового приглашения (STUN задаётся при создании соединения).
+            Mp.setLanOnly(!Mp.isLanOnly());
+            invite.cancel();
+            invite = server.newInvite();
+            copiedUntil = -1;
+            waitingPaste = false;
+            gh2.e = netLabel();
         }
     }
 
@@ -81,6 +94,7 @@ public class InviteScreen extends bp {
         ((gh)this.e.get(0)).e = tick < copiedUntil ? "Copied!" : "Copy code";
         ((gh)this.e.get(1)).g = invite.code != null && !invite.connected;
         ((gh)this.e.get(2)).e = invite.playerName != null ? "Done" : "Close";
+        ((gh)this.e.get(3)).g = invite.playerName == null && !invite.connected;
     }
 
     private void wrap(String text, int width, java.util.List<String> out) {
@@ -134,6 +148,13 @@ public class InviteScreen extends bp {
             }
         } else {
             this.a(this.g, "...", cx, by + 24, 0x808080);
+        }
+        if (invite.code != null) {
+            String mode = Mp.netMode(invite.guest().sock.linkId());
+            String hint = "lan".equals(mode)
+                ? (Mp.isLanOnly() ? "LAN only: players must be in the same network." : "No internet found: players must be in the same network.")
+                : "Works over the internet and in the same network.";
+            this.a(this.g, hint, cx, this.d / 2 + 86, 0x808080);
         }
         super.a(n2, n3, f2);
     }

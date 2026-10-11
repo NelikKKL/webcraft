@@ -101,6 +101,23 @@ public final class Mp {
 
     public static boolean isOpen(int id) { return isOpenNative(id); }
 
+    // ---------------------------------------------------------- режим сети (LAN / интернет)
+
+    /** "lan" — код содержит только локальные адреса (нет интернета или режим LAN only), "inet" — и публичный, "" — ещё неизвестно. */
+    public static String netMode(int id) { return netModeNative(id); }
+
+    /** true — STUN не используется вовсе: работает без интернета, код создаётся почти мгновенно. */
+    public static boolean isLanOnly() { return isLanOnlyNative(); }
+
+    public static void setLanOnly(boolean v) { setLanOnlyNative(v); }
+
+    @JSBody(params = { "id" }, script = "return window.Mp.netMode(id) || '';")
+    private static native String netModeNative(int id);
+    @JSBody(script = "return !!window.Mp.isLanOnly();")
+    private static native boolean isLanOnlyNative();
+    @JSBody(params = { "v" }, script = "window.Mp.setLanOnly(v);")
+    private static native void setLanOnlyNative(boolean v);
+
     @JSBody(script = "return window.Mp.newLink();")
     private static native int newLinkNative();
     @JSBody(params = { "id" }, script = "window.Mp.createInvite(id);")

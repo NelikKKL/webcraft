@@ -99,10 +99,12 @@ public final class HostServer implements jv {
         Guest guest;
         public void cancel() { if (guest != null) guest.drop("Invite cancelled"); }
         RtcSocket testSocket() { return guest.sock; }
+        /** Для окна приглашения: сокет этого приглашения (нужен номер ссылки WebRTC). */
+        public Guest guest() { return guest; }
     }
 
-    private static final class Guest {
-        final RtcSocket sock;
+    public static final class Guest {
+        public final RtcSocket sock;
         final Invite invite;
         int phase = PHASE_PENDING;
         String name = "Player";
@@ -112,9 +114,27 @@ public final class HostServer implements jv {
         final Set<Long> sent = new HashSet<Long>();
         final List<int[]> pending = new ArrayList<int[]>();
         int lastCx = Integer.MIN_VALUE, lastCz = Integer.MIN_VALUE;
+        // здоровье / падение / смерть
+        int lastHealth = -1;
+        double lastY = 0;
+        float fall = 0f;
+        boolean deathAnnounced = false;
+        int lastHurt = 0;
+        // открытый контейнер (сундук, печь, раздатчик, табличка): позиция и последнее отправленное состояние
+        boolean hasOpen = false;
+        int openX, openY, openZ;
+        byte[] openNbt = null;
         Guest(RtcSocket s, Invite i) { sock = s; invite = i; }
         void drop(String why) { if (!dead) { dead = true; if (sock != null) sock.close(); } }
     }
+
+    /** Состояние ушедшего игрока (по нику) — чтобы при возвращении не потерять инвентарь и здоровье. */
+    private static final class Saved {
+        InventoryItem[] storage, armor, crafting;
+        int health;
+        double x, y, z;
+    }
+    private final Map<String, Saved> saved = new HashMap<String, Saved>();
 
     final Ctx ctx;
     private final List<Guest> guests = new ArrayList<Guest>();
@@ -161,6 +181,39 @@ public final class HostServer implements jv {
 
     /** Для тестов: приглашение поверх подменённого сокета. */
     Invite newInviteForTest(RtcSocket sock) { return attach(sock); }
+
+    /** Ники игроков онлайн (для /list). */
+    public List<String> playerNames() {
+        List<String> out = new ArrayList<String>();
+        out.add(ctx.hostName());
+        for (Guest g : guests) if (g.phase == PHASE_PLAY) out.add(g.name);
+        return out;
+    }
+
+    /** /kick: отключает игрока по нику. Возвращает false, если такого нет. */
+    public boolean kick(String name) {
+        for (Guest g : guests) {
+            if (g.phase == PHASE_PLAY && g.name.equalsIgnoreCase(name)) {
+                send(g, new qi("Kicked by the host"));
+                g.drop("Kicked");
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** /kit: стартовый набор блоков и инструментов всем гостям (по умолчанию гости начинают с пустым инвентарём). */
+    public int giveKit() {
+        int n = 0;
+        for (Guest g : guests) {
+            if (g.phase != PHASE_PLAY || g.entity == null) continue;
+            InventoryItem[] kit = starterInventory(g.entity);
+            g.entity.e.storage = kit;
+            send(g, new p(-1, kit));
+            n++;
+        }
+        return n;
+    }
 
     /** Передать хосту код-ответ гостя. */
     public void acceptAnswer(Invite inv, String code) {
@@ -276,6 +329,10 @@ public final class HostServer implements jv {
             dropItem(g, (id)pkt);
         } else if (pkt instanceof a) {
             attack(g, (a)pkt);
+        } else if (pkt instanceof jk) {
+            respawn(g);
+        } else if (pkt instanceof py) {
+            tileFromGuest(g, (py)pkt);
         } else if (pkt instanceof qi) {
             g.drop("Quit");
         }
@@ -315,7 +372,10 @@ public final class HostServer implements jv {
         lw host = ctx.player();
         ps e = new ps(w, name);
         e.bl = null;   // не пытаться качать скин по HTTP
+        e.takesDamage = true;
         double[] spot = findSpawnSpot(w, host);
+        Saved back = saved.get(name.toLowerCase());
+        if (back != null && back.y > 1 && back.y < 126) spot = new double[]{back.x, back.y, back.z};
         double fx = spot[0], fy = spot[1], fz = spot[2];
         e.b(fx, fy, fz, host.aC, host.aD);
         w.a((lw)e);
@@ -339,9 +399,15 @@ public final class HostServer implements jv {
         ek time = new ek();
         time.a = w.e;
         send(g, time);
-        send(g, new p(-1, starterInventory(e)));
-        send(g, new p(-2, new InventoryItem[4]));
-        send(g, new p(-3, new InventoryItem[4]));
+        // Инвентарь: как в обычном выживании — пустой; вернувшийся игрок получает свои вещи и здоровье.
+        Saved sv = saved.get(name.toLowerCase());
+        if (sv != null) {
+            e.e.storage = sv.storage; e.e.b = sv.armor; e.e.c = sv.crafting;
+            if (sv.health > 0) e.J = sv.health;
+        }
+        send(g, new p(-1, e.e.storage));
+        send(g, new p(-2, e.e.c));
+        send(g, new p(-3, e.e.b));
 
         // Ближние чанки сразу — чтобы гость не провалился; остальные потоком
         int cx = (int)Math.floor(fx / 16.0), cz = (int)Math.floor(fz / 16.0);
@@ -436,6 +502,7 @@ public final class HostServer implements jv {
         pkt.d = 16; pkt.e = 128; pkt.f = 16;
         pkt.setCompressed(z);
         send(g, pkt);
+        sendChunkTiles(g, chunk);
     }
 
     private static final int VIEW = 6;
@@ -465,6 +532,10 @@ public final class HostServer implements jv {
     private boolean generatedThisTick = false;
 
     private void tickGuest(Guest g) {
+        ps ent = g.entity;
+        if (ent == null) return;
+        guestVitals(g, ent);
+        if (tickCount % 5 == 0) watchOpenTile(g);
         lw e = g.entity;
         int cx = (int)Math.floor(e.aw / 16.0), cz = (int)Math.floor(e.ay / 16.0);
         if (cx != g.lastCx || cz != g.lastCz || tickCount % 40 == 0) {
@@ -513,9 +584,70 @@ public final class HostServer implements jv {
         }
     }
 
+    // ------------------------------------------------------------ здоровье, смерть, возрождение гостя
+    /** Здоровье -> клиенту (пакет 8), урон -> отдача и анимация, смерть -> сообщение в чат. */
+    private void guestVitals(Guest g, ps ent) {
+        int hp = ent.J;
+        if (hp != g.lastHealth) {
+            cq c = new cq();
+            c.a = Math.max(hp, 0);
+            send(g, c);
+            if (g.lastHealth > hp && hp > 0) {
+                // отдача от удара — клиент сам двигает своего игрока
+                send(g, new dv(ent));
+                ent.az = 0.0; ent.aA = 0.0; ent.aB = 0.0;
+            }
+            g.lastHealth = hp;
+        }
+        if (ent.M > g.lastHurt && hp > 0) {                       // остальные гости видят, что игрока ударили
+            fs f = new fs(); f.a = ent.an; f.b = (byte)2; broadcastExcept(g, f);
+        }
+        g.lastHurt = ent.M;
+        if (hp <= 0 && !g.deathAnnounced) {
+            g.deathAnnounced = true;
+            String msg = "\u00a7e" + g.name + " died";
+            ctx.chat(msg);
+            broadcast(new jr(msg));
+            fs f = new fs(); f.a = ent.an; f.b = (byte)3; broadcastExcept(g, f);
+        }
+    }
+
+    /** Гость нажал "Respawn": новая сущность на месте старой, клиенту — пакет возрождения (клиент сам создаёт игрока). */
+    private void respawn(Guest g) {
+        Session w = world();
+        ps old = g.entity;
+        if (old == null) return;
+        int id = old.an;
+        if (!old.aN) old.J();
+        ps e = new ps(w, g.name);
+        e.bl = null;
+        e.takesDamage = true;
+        e.an = id;
+        double x = w.m + 0.5, z = w.o + 0.5;
+        double y = w.n;
+        e.b(x, y, z, 0f, 0f);
+        w.a((lw)e);
+        g.entity = e;
+        g.lastHealth = -1;
+        g.lastHurt = 0;
+        g.fall = 0f;
+        g.lastY = y;
+        g.deathAnnounced = false;
+        g.hasOpen = false;
+        lastSent.remove(id);
+        li gone = new li(); gone.a = id; broadcastExcept(g, gone);                         // другие гости: убрать труп
+        broadcastExcept(g, spawnPlayerPacket(id, g.name, x, y, z, 0f, 0f));              // и показать возродившегося
+        send(g, new jk());
+        send(g, new p(-1, new InventoryItem[37]));
+        send(g, new cr(x, y + 1.62, y, z, 0f, 0f, true));
+        g.lastCx = Integer.MIN_VALUE; g.lastCz = Integer.MIN_VALUE;   // заново посчитать чанки вокруг
+    }
+
     // ------------------------------------------------------------ действия гостя
     private void movement(Guest g, fa f) {
         ps e = g.entity;
+        if (e == null || e.aN) return;
+        trackFall(g, f);
         if (f.h) {
             double x = f.a, y = f.b, z = f.c;
             if (Math.abs(x) < 3.2e7 && Math.abs(z) < 3.2e7 && y > -64 && y < 400) {
@@ -525,6 +657,28 @@ public final class HostServer implements jv {
             e.a(e.aw, e.ax, e.ay, f.e, f.f, 3);
         }
         e.aH = f.g;
+    }
+
+    /** Урон от падения: считаем пройденное вниз без опоры, на земле — ceil(высота - 3), как в оригинале. */
+    private void trackFall(Guest g, fa f) {
+        if (!f.h) return;
+        double y = f.b;
+        Session w = world();
+        int bx = (int)Math.floor(f.a), bz = (int)Math.floor(f.c), by = (int)Math.floor(y);
+        int inBlock = (by >= 0 && by < 128) ? w.a(bx, by, bz) : 0;
+        boolean soft = inBlock == 8 || inBlock == 9 || inBlock == 65;   // вода и лестница гасят падение
+        if (soft) {
+            g.fall = 0f;
+        } else if (!f.g) {
+            if (y < g.lastY) g.fall += (float)(g.lastY - y);
+        } else {
+            if (g.fall > 3.0f && g.entity.J > 0) {
+                int dmg = (int)Math.ceil(g.fall - 3.0f);
+                if (dmg > 0) g.entity.a((lw)null, dmg);
+            }
+            g.fall = 0f;
+        }
+        g.lastY = y;
     }
 
     private void chat(Guest g, String text) {
@@ -568,7 +722,9 @@ public final class HostServer implements jv {
     private void place(Guest g, ed p) {
         Session w = world();
         ps e = g.entity;
-        if (p.c == -1 && p.b == -1) return;         // использование предмета в воздухе — не поддержано
+        // Клиент шлёт использование предмета "в воздух" как (x=-1, y=-1, z=-1, сторона=255); y читается как
+        // беззнаковый байт (255), поэтому проверяем сторону 255, а не y == -1.
+        if (p.e == 255 || (p.b == -1 && p.d == -1)) { useInAir(g, p); return; }
         int x = p.b, y = p.c, z = p.d, face = p.e;
         if (y < 0 || y >= 128 || !near(g, x, y, z, 10.0)) { resync(g, x, y, z); return; }
         InventoryItem held = e.e.storage[e.e.d];
@@ -576,11 +732,96 @@ public final class HostServer implements jv {
         int bid = w.a(x, y, z);
         boolean used = false;
         if (bid > 0 && Block.registry[bid] != null && Block.registry[bid].a(w, x, y, z, (Player)e)) used = true;
+        openTileEntity(g, x, y, z);   // сундук/печь/раздатчик/табличка: отправить содержимое и следить за изменениями
         if (!used && held != null) held.a((Player)e, w, x, y, z, face);
         // Результат придёт гостю через слушатель блоков; на всякий случай досылаем соседний блок
         resync(g, x, y, z);
         int ox = x + (face == 4 ? -1 : face == 5 ? 1 : 0), oy = y + (face == 0 ? -1 : face == 1 ? 1 : 0), oz = z + (face == 2 ? -1 : face == 3 ? 1 : 0);
         resync(g, ox, oy, oz);
+    }
+
+
+    // ------------------------------------------------ предметы "в воздух" (лук, снежок, еда, лодка...)
+    private void useInAir(Guest g, ed p) {
+        ps e = g.entity;
+        if (e == null || e.aN || e.J <= 0) return;
+        InventoryItem held = e.e.storage[e.e.d];
+        if (held == null || held.id != p.a) return;
+        int count = held.count;
+        InventoryItem res = held.a(world(), (Player)e);   // как iv.a(Player, Session, InventoryItem) в одиночной игре
+        if (res != held || (res != null && res.count != count)) {
+            e.e.storage[e.e.d] = res;
+            if (res != null && res.count == 0) e.e.storage[e.e.d] = null;
+        }
+    }
+
+    // ------------------------------------------------ tile entities: сундуки, печи, раздатчики, таблички (пакет 59)
+    private void sendTile(Guest g, TileEntityRegistry t) {
+        try {
+            send(g, new py(t.f, t.g, t.h, t));
+        } catch (RuntimeException ex) {
+            // нестандартный tile entity без NBT — клиенту он не нужен
+        }
+    }
+
+    private void sendChunkTiles(Guest g, ha chunk) {
+        for (Object o : new ArrayList<Object>(chunk.l.values())) sendTile(g, (TileEntityRegistry)o);
+    }
+
+    /** Гость кликнул по блоку: если там (или рядом — двойной сундук) tile entity, отправить его и следить. */
+    private void openTileEntity(Guest g, int x, int y, int z) {
+        Session w = world();
+        TileEntityRegistry t = w.b(x, y, z);
+        if (t == null) return;
+        g.hasOpen = true;
+        g.openX = x; g.openY = y; g.openZ = z;
+        g.openNbt = null;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                TileEntityRegistry n = w.b(x + dx, y, z + dz);
+                if (n != null) sendTile(g, n);
+            }
+        }
+        g.openNbt = serializeTile(t);
+    }
+
+    private byte[] serializeTile(TileEntityRegistry t) {
+        try {
+            return new py(t.f, t.g, t.h, t).d;
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    /** Раз в 5 тиков: содержимое открытого контейнера изменилось (хост, другой гость, печь горит) — переслать. */
+    private void watchOpenTile(Guest g) {
+        if (!g.hasOpen) return;
+        lw e = g.entity;
+        double dx = e.aw - (g.openX + 0.5), dz = e.ay - (g.openZ + 0.5);
+        if (dx * dx + dz * dz > 100.0) { g.hasOpen = false; return; }
+        TileEntityRegistry t = world().b(g.openX, g.openY, g.openZ);
+        if (t == null) { g.hasOpen = false; return; }
+        byte[] now = serializeTile(t);
+        if (now != null && (g.openNbt == null || !java.util.Arrays.equals(now, g.openNbt))) {
+            g.openNbt = now;
+            sendTile(g, t);
+        }
+    }
+
+    /** Гость изменил содержимое контейнера / текст таблички — применяем к настоящему tile entity хоста. */
+    private void tileFromGuest(Guest g, py p) {
+        if (g.entity == null || p.e == null) return;
+        if (!near(g, p.a, p.b, p.c, 10.0)) return;
+        TileEntityRegistry t = world().b(p.a, p.b, p.c);
+        if (t == null) return;
+        try {
+            t.a(p.e);
+            t.b();                                  // пометить чанк изменённым
+        } catch (RuntimeException ex) {
+            return;
+        }
+        if (g.hasOpen && g.openX == p.a && g.openY == p.b && g.openZ == p.c) g.openNbt = serializeTile(t);
+        broadcastExcept(g, p);                      // остальные гости видят новое содержимое / текст таблички
     }
 
     private void resync(Guest g, int x, int y, int z) {
@@ -627,8 +868,18 @@ public final class HostServer implements jv {
     }
 
     // ============================================ синхронизация сущностей мира
+    /** Тип в пакете 23 (VehicleSpawn) или -1, если этот объект гостям не отправляется. */
+    private static int vehicleType(lw e) {
+        if (e instanceof Minecart) return 10 + ((Minecart)e).d;
+        if (e instanceof Arrow) return 60;
+        if (e instanceof Snowball) return 61;
+        if (e instanceof Boat) return 1;
+        if (e instanceof PrimedTNT) return 50;
+        return -1;
+    }
+
     private static boolean syncable(lw e) {
-        return e instanceof DroppedItem || (e instanceof Mob && !(e instanceof Player));
+        return e instanceof DroppedItem || (e instanceof Mob && !(e instanceof Player)) || vehicleType(e) >= 0;
     }
 
     private void sendExistingEntities(Guest g) {
@@ -642,6 +893,15 @@ public final class HostServer implements jv {
     private void sendSpawn(Guest g, lw e) {
         if (e instanceof DroppedItem) {
             if (((DroppedItem)e).a != null) send(g, new id((DroppedItem)e));
+        } else if (vehicleType(e) >= 0) {
+            lz v = new lz();
+            v.a = e.an;
+            v.b = (int)Math.floor(e.aw * 32.0);
+            v.c = (int)Math.floor(e.ax * 32.0);
+            v.d = (int)Math.floor(e.ay * 32.0);
+            v.e = vehicleType(e);
+            send(g, v);
+            if (e instanceof Arrow || e instanceof Snowball) send(g, new dv(e));   // скорость выстрела
         } else if (e instanceof Mob) {
             try {
                 send(g, new fv((Mob)e));
@@ -659,12 +919,32 @@ public final class HostServer implements jv {
         for (Guest g : guests) {
             if (g.phase == PHASE_PLAY && g.entity != null) sendMove(g, g.entity, g.entity.ax);
         }
-        if (tickCount % 6 == 0) {
-            List all = world().b;
-            for (int i = 0; i < all.size(); i++) {
-                lw e = (lw)all.get(i);
-                if (e instanceof Mob && !(e instanceof Player) && !e.aN) sendMove(null, e, e.ax);
+        List all = world().b;
+        for (int i = 0; i < all.size(); i++) {
+            lw e = (lw)all.get(i);
+            if (e.aN) continue;
+            if (e instanceof Mob && !(e instanceof Player)) {
+                if (tickCount % 6 == 0) sendMove(null, e, e.ax);
+                mobStatus((Mob)e);
+            } else if (vehicleType(e) >= 0) {
+                sendMove(null, e, e.ax);           // снаряды и транспорт — каждые 2 тика
             }
+        }
+    }
+
+    private final Map<Integer, int[]> mobState = new HashMap<Integer, int[]>();   // id -> {последний hurtTime, смерть отправлена}
+
+    /** Анимации "ударили" (статус 2) и "умер" (статус 3) для мобов — чтобы гости видели, как моб получает урон. */
+    private void mobStatus(Mob m) {
+        int[] st = mobState.get(m.an);
+        if (st == null) { st = new int[]{0, 0}; mobState.put(m.an, st); }
+        if (m.M > st[0] && m.J > 0) {
+            fs f = new fs(); f.a = m.an; f.b = (byte)2; broadcast(f);
+        }
+        st[0] = m.M;
+        if (m.J <= 0 && st[1] == 0) {
+            st[1] = 1;
+            fs f = new fs(); f.a = m.an; f.b = (byte)3; broadcast(f);
         }
     }
 
@@ -708,11 +988,29 @@ public final class HostServer implements jv {
         }
     }
 
+    private static InventoryItem[] copyItems(InventoryItem[] src) {
+        InventoryItem[] out = new InventoryItem[src.length];
+        for (int i = 0; i < src.length; i++) out[i] = src[i] == null ? null : new InventoryItem(src[i].id, src[i].count, src[i].damage);
+        return out;
+    }
+
     private void removeGuest(Guest g) {
+        if (g.entity != null && g.phase == PHASE_PLAY && !g.entity.aN && g.entity.J > 0) {
+            // запомнить вещи, здоровье и место — игрок может вернуться (тот же ник) в эту же сессию хоста
+            Saved sv = new Saved();
+            sv.storage = copyItems(g.entity.e.storage);
+            sv.armor = copyItems(g.entity.e.b);
+            sv.crafting = copyItems(g.entity.e.c);
+            sv.health = g.entity.J;
+            sv.x = g.entity.aw; sv.y = g.entity.aG.b; sv.z = g.entity.ay;
+            saved.put(g.name.toLowerCase(), sv);
+        }
         if (g.entity != null) {
             if (!g.entity.aN) g.entity.J();
             lastSent.remove(g.entity.an);
             if (g.phase == PHASE_PLAY) {
+                li gone = new li(); gone.a = g.entity != null ? g.entity.an : -1;
+                if (gone.a >= 0) broadcastExcept(g, gone);                                 // убрать модель игрока у остальных
                 String msg = "\u00a7e" + g.name + " left the game";
                 ctx.chat(msg);
                 broadcastExcept(g, new jr(msg));

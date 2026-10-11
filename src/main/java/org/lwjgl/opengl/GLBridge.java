@@ -207,6 +207,8 @@ final class GLBridge {
         s.boundTextureId = id;
         Boolean nearest = s.texNearest.get(id);
         s.curNearest = nearest == null || nearest.booleanValue();
+        Boolean clampMode = s.texClamp.get(id);
+        s.curClamp = clampMode != null && clampMode.booleanValue();
         if (!s.glTexValid || s.glTex != tex) {
             s.gl.bindTexture(GL_TEXTURE_2D, tex);
             s.glTex = tex;
@@ -216,7 +218,17 @@ final class GLBridge {
 
     /** glTexParameteri: передаём в GL и запоминаем запрошенный фильтр увеличения для шейдера. */
     static void texParameteri(GLState s, int target, int pname, int param) {
+        // GL_CLAMP (10496) и GL_CLAMP_TO_BORDER в WebGL не существуют (INVALID_ENUM, обёртка оставалась
+        // REPEAT) — заменяем на CLAMP_TO_EDGE, это то, чем GL_CLAMP фактически является для таких текстур.
+        if ((pname == 10242 || pname == 10243) && (param == 10496 || param == 33069)) {
+            param = 33071;
+        }
         s.gl.texParameteri(target, pname, param);
+        if (pname == 10242 || pname == 10243) {
+            boolean clamp = param == 33071;
+            s.texClamp.put(s.boundTextureId, Boolean.valueOf(clamp));
+            s.curClamp = clamp;
+        }
         if (pname == 10240 /* GL_TEXTURE_MAG_FILTER */) {
             boolean nearest = param == 9728 || param == 9984 || param == 9986;
             s.texNearest.put(s.boundTextureId, Boolean.valueOf(nearest));
@@ -226,6 +238,7 @@ final class GLBridge {
 
     static void deleteTexture(GLState s, int id) {
         s.texNearest.remove(id);
+        s.texClamp.remove(id);
         WebGLTexture tex = s.textures.remove(id);
         if (tex != null) {
             s.gl.deleteTexture(tex);
@@ -774,6 +787,11 @@ final class GLBridge {
         if (s.cNearest != nearest) {
             s.gl.uniform1i(sh.uNearest, nearest);
             s.cNearest = nearest;
+        }
+        int clampNow = s.curClamp ? 1 : 0;
+        if (s.cClamp != clampNow) {
+            s.gl.uniform1i(sh.uClamp, clampNow);
+            s.cClamp = clampNow;
         }
         // glAlphaFunc(GREATER|GEQUAL, ref) при включённом GL_ALPHA_TEST
         int alphaFunc = !s.alphaTestEnabled ? 0 : (s.alphaFunc == 516 ? 1 : (s.alphaFunc == 518 ? 2 : 0));

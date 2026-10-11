@@ -467,12 +467,38 @@
     return L.join('\r\n') + '\r\n';
   }
 
-  function waitIce(pc) {
+  // Режим сети: "Auto" — STUN + локальные адреса (ICE сам выберет лучшую пару: в одной сети — напрямую
+  // по локальным адресам, иначе — по публичным); "LAN only" — без STUN вообще (работает без интернета).
+  function lanOnly() { try { return localStorage.getItem('webcraft.mp.lan') === '1'; } catch (e) { return false; } }
+  function setLanOnly(v) { try { localStorage.setItem('webcraft.mp.lan', v ? '1' : '0'); } catch (e) {} }
+
+  // Ждём кандидатов не дольше необходимого. Раньше всегда ждали окончания сбора (до 4 с, если STUN
+  // недоступен — например, нет интернета). Теперь:
+  //   LAN only: STUN нет, сбор заканчивается сам (~100 мс), потолок 1.5 с;
+  //   Auto: как только пришёл публичный адрес (srflx) + 0.4 с на остальных; если за 2.2 с публичного адреса
+  //   нет, но локальные есть — считаем, что интернета нет, и отдаём код только с локальными адресами.
+  function waitIce(pc, link) {
     return new Promise(function (resolve) {
-      if (pc.iceGatheringState === 'complete') return resolve();
-      var done = function () { resolve(); };
-      pc.addEventListener('icegatheringstatechange', function () { if (pc.iceGatheringState === 'complete') done(); });
-      setTimeout(done, 4000);       // не ждём бесконечно: хватит и того, что собралось
+      var done = false, t0 = Date.now(), seenHost = 0, seenSrflx = 0, tmr = 0;
+      function finish() {
+        if (done) return; done = true; clearInterval(tmr);
+        link.net = { host: seenHost, srflx: seenSrflx, lanOnly: lanOnly() };
+        resolve();
+      }
+      pc.addEventListener('icecandidate', function (e) {
+        if (!e.candidate) return;
+        var m = / typ (host|srflx|relay)/.exec(e.candidate.candidate || '');
+        if (m && m[1] === 'host') seenHost++; else if (m && m[1] === 'srflx') { if (!seenSrflx) setTimeout(finish, 400); seenSrflx++; }
+      });
+      pc.addEventListener('icegatheringstatechange', function () { if (pc.iceGatheringState === 'complete') finish(); });
+      if (pc.iceGatheringState === 'complete') return finish();
+      tmr = setInterval(function () {
+        var el = Date.now() - t0;
+        if (lanOnly()) { if (seenHost && el > 300) finish(); else if (el > 1500) finish(); return; }
+        if (navigator.onLine === false && seenHost && el > 500) return finish();
+        if (!seenSrflx && seenHost && el > 2200) return finish();
+        if (el > 4000) finish();
+      }, 100);
     });
   }
 
@@ -493,7 +519,7 @@
   };
   Link.prototype._pc = function () {
     var self = this;
-    this.pc = new RTCPeerConnection({ iceServers: MP_STUN });
+    this.pc = new RTCPeerConnection({ iceServers: lanOnly() ? [] : MP_STUN });
     this.pc.onconnectionstatechange = function () {
       var s = self.pc.connectionState;
       if (s === 'failed' || s === 'closed' || s === 'disconnected') self._closed();
@@ -505,7 +531,7 @@
     var self = this, pc = this._pc();
     this._wire(pc.createDataChannel('mc', { ordered: true }));
     return pc.createOffer().then(function (o) { return pc.setLocalDescription(o); })
-      .then(function () { return waitIce(pc); })
+      .then(function () { return waitIce(pc, self); })
       .then(function () { return packSdp(pc.localDescription.sdp, false); });
   };
   // Хост: принять ответ гостя
@@ -523,7 +549,7 @@
     return pc.setRemoteDescription({ type: 'offer', sdp: buildSdp(info, true) })
       .then(function () { return pc.createAnswer(); })
       .then(function (a) { return pc.setLocalDescription(a); })
-      .then(function () { return waitIce(pc); })
+      .then(function () { return waitIce(pc, self); })
       .then(function () { return packSdp(pc.localDescription.sdp, true); });
   };
   Link.prototype.send = function (u8) {
@@ -568,6 +594,14 @@
           function (e) { window.__javaMp.onCode(id, '', String(e && e.message || e)); });
       } catch (e) { window.__javaMp.onCode(id, '', String(e && e.message || e)); }
     },
+    // Как получен код: "lan" — только локальные адреса (интернета нет / режим LAN only), "inet" — есть и публичный адрес.
+    netMode: function (id) {
+      var n = links[id] && links[id].net;
+      if (!n) return '';
+      return (n.srflx > 0) ? 'inet' : 'lan';
+    },
+    isLanOnly: function () { return lanOnly(); },
+    setLanOnly: function (v) { setLanOnly(!!v); },
     send: function (id, u8) { try { links[id].send(u8); } catch (e) {} },
     close: function (id) { if (links[id]) links[id].close(); },
     isOpen: function (id) { return !!(links[id] && links[id].open); },

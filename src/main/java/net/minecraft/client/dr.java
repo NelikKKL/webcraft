@@ -62,10 +62,34 @@ extends bp {
                 this.b.u.a("\u00a7cThe server is not running.");
             }
             this.b.a((bp)null);
+        } else if (cmd.equals("/list")) {
+            HostServer srv = HostServer.get();
+            java.util.List<String> names = srv != null ? srv.playerNames() : java.util.Collections.singletonList(this.b.i != null ? this.b.i.b : "Player");
+            this.b.u.a("\u00a7ePlayers (" + names.size() + "): \u00a7f" + String.join(", ", names));
+            this.b.a((bp)null);
+        } else if (cmd.equals("/kick")) {
+            HostServer srv = HostServer.get();
+            if (srv == null) {
+                this.b.u.a("\u00a7cThe server is not running.");
+            } else if (parts.length < 2) {
+                this.b.u.a("\u00a7cUsage: /kick <name>");
+            } else {
+                this.b.u.a(srv.kick(parts[1]) ? "\u00a7eKicked " + parts[1] : "\u00a7cNo such player: " + parts[1]);
+            }
+            this.b.a((bp)null);
+        } else if (cmd.equals("/kit")) {
+            HostServer srv = HostServer.get();
+            if (srv == null) {
+                this.b.u.a("\u00a7cThe server is not running.");
+            } else {
+                this.b.u.a("\u00a7eStarter kit given to " + srv.giveKit() + " player(s).");
+            }
+            this.b.a((bp)null);
         } else if (cmd.equals("/help")) {
             this.b.u.a("\u00a7e/start-server\u00a7f - start hosting and invite a player");
             this.b.u.a("\u00a7e/invite\u00a7f - invite one more player");
             this.b.u.a("\u00a7e/stop-server\u00a7f - stop hosting");
+            this.b.u.a("\u00a7e/list\u00a7f - players online;  \u00a7e/kick <name>\u00a7f;  \u00a7e/kit\u00a7f - starter kit for guests");
             this.b.a((bp)null);
         } else {
             this.b.u.a("\u00a7cUnknown command. Type /help");
