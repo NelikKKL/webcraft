@@ -39,6 +39,10 @@ extends mo {
             return;
         }
         this.d.a();
+        if (this.e != null && this.e.g != null && this.skinVersionSent >= 0
+            && this.skinVersionSent != net.minecraft.client.web.SkinStore.localVersion()) {
+            this.sendOwnSkin();   // игрок сменил скин во время игры
+        }
     }
 
     @Override
@@ -50,6 +54,26 @@ extends mo {
         this.e.a(new du(this));
         this.e.g.an = iu2.a;
         System.out.println("clientEntityId: " + iu2.a);
+        this.sendOwnSkin();
+    }
+
+    // ---- скины игроков (пакет 200, расширение порта)
+    private int skinVersionSent = -1;
+
+    /** Отправить хосту свой скин (после входа и при каждой его смене). */
+    private void sendOwnSkin() {
+        this.skinVersionSent = net.minecraft.client.web.SkinStore.localVersion();
+        byte[] png = net.minecraft.client.web.SkinStore.localPng();
+        if (png != null && this.e != null && this.e.g != null) {
+            this.d.a((gk)new SkinPacket(this.e.g.an, net.minecraft.client.web.SkinStore.isSlim(), png));
+        }
+    }
+
+    @Override
+    public void a(SkinPacket skinPacket) {
+        if (skinPacket.c != null) {
+            net.minecraft.client.web.SkinStore.queueRemote(skinPacket.a, skinPacket.b == 1, skinPacket.c);
+        }
     }
 
     @Override

@@ -139,5 +139,9 @@ public class mo {
     public void a(lc lc2) {
         this.b(lc2);
     }
-}
 
+    /** Скин игрока (пакет 200, расширение порта). */
+    public void a(SkinPacket skinPacket) {
+        this.b((gk)skinPacket);
+    }
+}

@@ -439,6 +439,43 @@ implements Runnable {
         }
     }
 
+    /**
+     * Применяет декодированные скины других игроков (пакет 200): путь текстуры и тип модели (64x64 / тонкие руки)
+     * записываются в сущность ps. Если сущность ещё не появилась (скин пришёл раньше пакета спавна) — ждём
+     * несколько секунд.
+     */
+    private void applyRemoteSkins() {
+        java.util.List<net.minecraft.client.web.SkinStore.Remote> list = net.minecraft.client.web.SkinStore.takeReady();
+        if (list.isEmpty()) {
+            return;
+        }
+        for (net.minecraft.client.web.SkinStore.Remote r : list) {
+            ps target = null;
+            if (this.e != null) {
+                java.util.List all = this.e.b;
+                for (int i = 0; i < all.size(); i++) {
+                    Object o = all.get(i);
+                    if (o instanceof ps && ((ps)o).an == r.entityId) {
+                        target = (ps)o;
+                        break;
+                    }
+                }
+            }
+            if (target == null) {
+                if (++r.tries < 600) {
+                    net.minecraft.client.web.SkinStore.requeue(r);
+                }
+                continue;
+            }
+            target.z = r.path;
+            target.skinModern = r.modern;
+            target.skinSlim = r.slim;
+            if (this.n != null) {
+                this.n.c(r.path);   // если текстура уже была загружена — перезалить на месте
+            }
+        }
+    }
+
     /** Меняет ник (в сессии и у живого игрока) и сохраняет его. */
     public void applyNick(String nick) {
         net.minecraft.client.web.SkinStore.setNick(nick);
@@ -458,6 +495,7 @@ implements Runnable {
         if (net.minecraft.client.web.SkinStore.consumePending()) {
             this.applySkinNow();
         }
+        this.applyRemoteSkins();
         if (this.loadingActive) {
             // Идёт прогрев мира: обычный тик/рендер пропускаем, показываем прогресс.
             boolean done = true;

@@ -22,6 +22,7 @@ extends Player {
             System.out.println("Loading texture " + this.bl);
         }
         this.name = ea2.b;
+        this.z = net.minecraft.client.web.SkinStore.texturePath();   // свой скин или /mob/char.png
     }
 
     @Override

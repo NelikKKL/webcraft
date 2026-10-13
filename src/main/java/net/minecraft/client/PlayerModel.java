@@ -19,16 +19,31 @@ public class PlayerModel extends dc {
 
     public ka jacket, rightSleeve, leftSleeve, rightPants, leftPants;
     private final float pad;
-    private int built = 0;   // 0 = классика, 1 = 64x64 classic, 2 = 64x64 slim
+    private int built = -1;  // 0 = классика, 1 = 64x64 classic, 2 = 64x64 slim; -1 = ещё не строили
+    private int forcedModern = -1, forcedSlim = -1;   // -1: брать из SkinStore (свой скин)
+    private final ka[][] cache = new ka[3][];          // готовые раскладки — переключение без пересборки display list'ов
 
     public PlayerModel(float pad) {
         super(pad);
         this.pad = pad;
     }
 
+    /** Какой скин у ЭТОГО игрока (для чужих — из пакета 200); без вызова — свой скин из SkinStore. */
+    public void configure(boolean modern, boolean slim) {
+        this.forcedModern = modern ? 1 : 0;
+        this.forcedSlim = slim ? 1 : 0;
+    }
+
+    public void configureLocal() {
+        this.forcedModern = -1;
+        this.forcedSlim = -1;
+    }
+
     private int wanted() {
-        if (!SkinStore.isModern()) return 0;
-        return SkinStore.isSlim() ? 2 : 1;
+        boolean modern = this.forcedModern >= 0 ? this.forcedModern == 1 : SkinStore.isModern();
+        if (!modern) return 0;
+        boolean slim = this.forcedSlim >= 0 ? this.forcedSlim == 1 : SkinStore.isSlim();
+        return slim ? 2 : 1;
     }
 
     /** Приводит раскладку частей в соответствие текущему скину. Вызывать перед обращением к частям. */
@@ -47,8 +62,21 @@ public class PlayerModel extends dc {
         }
     }
 
+    private void saveToCache(int state) {
+        cache[state] = new ka[]{a, b, c, d, e, f, g, jacket, rightSleeve, leftSleeve, rightPants, leftPants};
+    }
+
+    private void loadFromCache(int state) {
+        ka[] k = cache[state];
+        a = k[0]; b = k[1]; c = k[2]; d = k[3]; e = k[4]; f = k[5]; g = k[6];
+        jacket = k[7]; rightSleeve = k[8]; leftSleeve = k[9]; rightPants = k[10]; leftPants = k[11];
+    }
+
     private void build(int state) {
-        freeAll();
+        if (cache[state] != null) {
+            loadFromCache(state);
+            return;
+        }
         boolean modern = state != 0;
         boolean slim = state == 2;
         int th = modern ? 64 : 32;
@@ -111,6 +139,7 @@ public class PlayerModel extends dc {
         } else {
             jacket = rightSleeve = leftSleeve = rightPants = leftPants = null;
         }
+        saveToCache(state);
     }
 
     private static void copyPose(ka from, ka to) {

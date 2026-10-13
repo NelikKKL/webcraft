@@ -72,6 +72,7 @@ public abstract class gk {
         if (clazz == py.class) return new py();
         if (clazz == lc.class) return new lc();
         if (clazz == qi.class) return new qi();
+        if (clazz == SkinPacket.class) return new SkinPacket();
         return null;
     }
 
@@ -161,6 +162,7 @@ public abstract class gk {
         gk.a(59, py.class);
         gk.a(60, lc.class);
         gk.a(255, qi.class);
+        gk.a(200, SkinPacket.class);   // скин игрока (расширение порта)
     }
 }
 

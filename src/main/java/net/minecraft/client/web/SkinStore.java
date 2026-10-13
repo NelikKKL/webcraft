@@ -29,6 +29,8 @@ public final class SkinStore {
     private static boolean autoSlim = false;
     private static int width = 0, height = 0;
     private static boolean pendingApply = false;
+    /** Растёт при каждой смене СВОЕГО скина — сетевой код по нему понимает, что скин нужно отправить заново. */
+    private static int localVersion = 0;
 
     /** 0 = Auto (по прозрачности), 1 = Classic (4 px), 2 = Slim (3 px). */
     private static int armMode = readArmMode();
@@ -36,17 +38,19 @@ public final class SkinStore {
 
     @JSFunctor interface SetCb extends JSObject { void call(int w, int h, Uint8Array rgba); }
     @JSFunctor interface ClearCb extends JSObject { void call(); }
+    @JSFunctor interface SetForCb extends JSObject { void call(int entityId, int w, int h, boolean slim, Uint8Array rgba); }
 
     /** Регистрирует колбэки для JS. Вызывать до загрузки сохранённого скина. */
     public static void install() {
         SetCb set = SkinStore::onSet;
         ClearCb clear = SkinStore::onClear;
-        installNative(set, clear);
+        SetForCb setFor = SkinStore::onSetFor;
+        installNative(set, clear, setFor);
     }
 
-    @JSBody(params = { "set", "clear" }, script =
-        "window.__javaSkin = { set: set, clear: clear };")
-    private static native void installNative(SetCb set, ClearCb clear);
+    @JSBody(params = { "set", "clear", "setFor" }, script =
+        "window.__javaSkin = { set: set, clear: clear, setFor: setFor };")
+    private static native void installNative(SetCb set, ClearCb clear, SetForCb setFor);
 
     private static void onSet(int w, int h, Uint8Array rgba) {
         ResourceCache.Entry e = ResourceCache.makeEntry(w, h, rgba);
@@ -57,6 +61,7 @@ public final class SkinStore {
         modern = (h == w);
         autoSlim = modern && detectSlim(e.argb, w);
         pendingApply = true;
+        localVersion++;
     }
 
     private static void onClear() {
@@ -65,6 +70,7 @@ public final class SkinStore {
         modern = false;
         autoSlim = false;
         pendingApply = true;
+        localVersion++;
     }
 
     /**
@@ -81,6 +87,67 @@ public final class SkinStore {
         }
         return true;
     }
+
+    // ------------------------------------------------- скины других игроков (пакет 200)
+
+    /** Готовый (декодированный) скин чужой сущности, ждёт применения в игровом цикле. */
+    public static final class Remote {
+        public final int entityId;
+        public final String path;
+        public final boolean modern, slim;
+        public int tries = 0;
+        Remote(int id, String path, boolean modern, boolean slim) { this.entityId = id; this.path = path; this.modern = modern; this.slim = slim; }
+    }
+
+    private static final java.util.ArrayList<Remote> ready = new java.util.ArrayList<>();
+
+    public static String remotePath(int entityId) { return "/skin/remote_" + entityId + ".png"; }
+
+    public static int localVersion() { return localVersion; }
+
+    /** Отдать PNG чужого скина на декодирование (браузер); результат появится в takeReady(). */
+    public static void queueRemote(int entityId, boolean slim, byte[] png) {
+        if (png == null || png.length == 0 || png.length > 200000) return;
+        Uint8Array arr = new Uint8Array(new org.teavm.jso.typedarrays.ArrayBuffer(png.length));
+        arr.set(png, 0);
+        decodeForNative(entityId, slim, arr);
+    }
+
+    @JSBody(params = { "id", "slim", "bytes" }, script = "if (window.Skins) { window.Skins.decodeFor(id, slim, bytes); }")
+    private static native void decodeForNative(int id, boolean slim, Uint8Array bytes);
+
+    private static void onSetFor(int entityId, int w, int h, boolean slim, Uint8Array rgba) {
+        ResourceCache.Entry e = ResourceCache.makeEntry(w, h, rgba);
+        String path = remotePath(entityId);
+        ResourceCache.putDynamic(path, e);
+        boolean mod = (h == w);
+        ready.add(new Remote(entityId, path, mod, mod && slim));
+    }
+
+    public static java.util.List<Remote> takeReady() {
+        if (ready.isEmpty()) return java.util.Collections.emptyList();
+        java.util.ArrayList<Remote> out = new java.util.ArrayList<>(ready);
+        ready.clear();
+        return out;
+    }
+
+    /** Сущность ещё не появилась — вернуть в очередь (не навсегда). */
+    public static void requeue(Remote r) { ready.add(r); }
+
+    /** PNG своего скина (как загружен) или null; slim — тонкие руки с учётом настройки Arms. */
+    public static byte[] localPng() {
+        if (!has) return null;
+        Uint8Array a = localPngNative();
+        if (a == null) return null;
+        int n = a.getLength();
+        if (n <= 0 || n > 200000) return null;
+        byte[] out = new byte[n];
+        for (int i = 0; i < n; i++) out[i] = (byte)a.get(i);
+        return out;
+    }
+
+    @JSBody(script = "return window.__localSkinPng || null;")
+    private static native Uint8Array localPngNative();
 
     // ------------------------------------------------------------ состояние
 

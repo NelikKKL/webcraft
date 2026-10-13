@@ -16,16 +16,17 @@ extends Player {
      * false — обычный удалённый игрок на клиенте (неуязвимый, как в оригинале).
      */
     public boolean takesDamage = false;
+    /** Скин этого игрока (из пакета 200): 64x64-раскладка и тонкие руки — для модели; сам файл — в этом пути. */
+    public boolean skinModern = false;
+    public boolean skinSlim = false;
 
     public ps(Session cy2, String string) {
         super(cy2);
         this.name = string;
         this.aO = 0.0f;
         this.aZ = 0.0f;
-        if (string != null && string.length() > 0) {
-            this.bl = "http://www.minecraft.net/skin/" + string + ".png";
-            System.out.println("Loading texture " + this.bl);
-        }
+        // Скины minecraft.net в браузере недоступны — скин приходит пакетом 200 (SkinPacket), путь в this.z.
+        this.bl = null;
         this.ba = true;
         this.ao = 10.0;
     }

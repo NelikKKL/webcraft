@@ -120,6 +120,8 @@ public final class HostServer implements jv {
         float fall = 0f;
         boolean deathAnnounced = false;
         int lastHurt = 0;
+        byte[] skinPng = null;      // скин гостя (пакет 200) и флаг тонких рук
+        boolean skinSlim = false;
         // открытый контейнер (сундук, печь, раздатчик, табличка): позиция и последнее отправленное состояние
         boolean hasOpen = false;
         int openX, openY, openZ;
@@ -254,7 +256,12 @@ public final class HostServer implements jv {
             t.a = w.e;
             broadcast(t);
         }
-        if (tickCount % 2 == 0) syncEntities();
+        if (tickCount % 2 == 0) { syncEntities(); syncPlayerLooks(); }
+        int sv = net.minecraft.client.web.SkinStore.localVersion();
+        if (sv != hostSkinVersion) {              // хост сменил скин — разослать (первый раз — просто запомнить)
+            if (hostSkinVersion >= 0) sendHostSkin(null);
+            hostSkinVersion = sv;
+        }
         pickups();
     }
 
@@ -321,6 +328,10 @@ public final class HostServer implements jv {
             if (slot >= 0 && slot < 9) g.entity.e.d = slot;
         } else if (pkt instanceof ii) {
             ii a = (ii)pkt;
+            // показать взмах руки / приседание гостя на экране хоста (его сущность ps — в мире хоста)
+            if (a.b == 1) g.entity.z();
+            else if (a.b == 104) g.entity.bw = true;
+            else if (a.b == 105) g.entity.bw = false;
             ii out = new ii();
             out.a = g.entity.an;
             out.b = a.b;
@@ -329,6 +340,8 @@ public final class HostServer implements jv {
             dropItem(g, (id)pkt);
         } else if (pkt instanceof a) {
             attack(g, (a)pkt);
+        } else if (pkt instanceof SkinPacket) {
+            skinFromGuest(g, (SkinPacket)pkt);
         } else if (pkt instanceof jk) {
             respawn(g);
         } else if (pkt instanceof py) {
@@ -419,15 +432,17 @@ public final class HostServer implements jv {
         send(g, new cr(fx, fy + 1.62, fy, fz, host.aC, host.aD, true));
 
         // Показать гостю хоста и остальных игроков, а гостя — остальным
-        send(g, spawnPlayerPacket(host.an, ctx.hostName(), host.aw, host.aG.b, host.ay, host.aC, host.aD));
+        send(g, spawnPlayerPacket(host.an, ctx.hostName(), host.aw, host.aG.b, host.ay, host.aC, host.aD, heldId(host)));
+        hostHeld = heldId(host);
         for (Guest o : guests) {
             if (o != g && o.phase == PHASE_PLAY && o.entity != null) {
                 lw oe = o.entity;
-                send(g, spawnPlayerPacket(oe.an, o.name, oe.aw, oe.ax, oe.ay, oe.aC, oe.aD));
+                send(g, spawnPlayerPacket(oe.an, o.name, oe.aw, oe.ax, oe.ay, oe.aC, oe.aD, heldId(oe)));
             }
         }
-        broadcastExcept(g, spawnPlayerPacket(e.an, name, fx, fy, fz, host.aC, host.aD));
+        broadcastExcept(g, spawnPlayerPacket(e.an, name, fx, fy, fz, host.aC, host.aD, heldId(e)));
         sendExistingEntities(g);
+        sendKnownSkins(g);
 
         String msg = "\u00a7e" + name + " joined the game";
         ctx.chat(msg);
@@ -466,7 +481,19 @@ public final class HostServer implements jv {
         return inv;
     }
 
+    private static int heldId(lw e) {
+        if (e instanceof Player) {
+            InventoryItem it = ((Player)e).e.a();
+            return it == null ? 0 : it.id;
+        }
+        return 0;
+    }
+
     private hs spawnPlayerPacket(int id, String name, double x, double feetY, double z, float yaw, float pitch) {
+        return spawnPlayerPacket(id, name, x, feetY, z, yaw, pitch, 0);
+    }
+
+    private hs spawnPlayerPacket(int id, String name, double x, double feetY, double z, float yaw, float pitch, int held) {
         hs s = new hs();
         s.a = id;
         s.b = name;
@@ -475,7 +502,7 @@ public final class HostServer implements jv {
         s.e = (int)Math.floor(z * 32.0);
         s.f = (byte)(int)(yaw * 256.0f / 360.0f);
         s.g = (byte)(int)(pitch * 256.0f / 360.0f);
-        s.h = 0;
+        s.h = held;
         return s;
     }
 
@@ -612,6 +639,37 @@ public final class HostServer implements jv {
         }
     }
 
+    // ------------------------------------------------------------ скины (пакет 200)
+    private int hostSkinVersion = -1;
+
+    /** Гость прислал свой скин: применить к его сущности на хосте и разослать остальным. */
+    private void skinFromGuest(Guest g, SkinPacket p) {
+        if (g.entity == null || p.c == null || p.c.length == 0 || p.c.length > SkinPacket.MAX_BYTES) return;
+        g.skinPng = p.c;
+        g.skinSlim = p.b == 1;
+        net.minecraft.client.web.SkinStore.queueRemote(g.entity.an, g.skinSlim, g.skinPng);   // хост тоже видит скин
+        broadcastExcept(g, new SkinPacket(g.entity.an, g.skinSlim, g.skinPng));
+    }
+
+    /** Свой скин хоста -> всем гостям (при входе гостя и при смене скина). */
+    private void sendHostSkin(Guest only) {
+        byte[] png = net.minecraft.client.web.SkinStore.localPng();
+        lw host = ctx.player();
+        if (png == null || host == null) return;
+        SkinPacket sp = new SkinPacket(host.an, net.minecraft.client.web.SkinStore.isSlim(), png);
+        if (only != null) send(only, sp); else broadcast(sp);
+    }
+
+    /** Гость при входе получает скины всех, кто уже в игре (и хоста). */
+    private void sendKnownSkins(Guest to) {
+        sendHostSkin(to);
+        for (Guest o : guests) {
+            if (o != to && o.phase == PHASE_PLAY && o.skinPng != null && o.entity != null) {
+                send(to, new SkinPacket(o.entity.an, o.skinSlim, o.skinPng));
+            }
+        }
+    }
+
     /** Гость нажал "Respawn": новая сущность на месте старой, клиенту — пакет возрождения (клиент сам создаёт игрока). */
     private void respawn(Guest g) {
         Session w = world();
@@ -635,6 +693,7 @@ public final class HostServer implements jv {
         g.deathAnnounced = false;
         g.hasOpen = false;
         lastSent.remove(id);
+        heldSent.remove(id);
         li gone = new li(); gone.a = id; broadcastExcept(g, gone);                         // другие гости: убрать труп
         broadcastExcept(g, spawnPlayerPacket(id, g.name, x, y, z, 0f, 0f));              // и показать возродившегося
         send(g, new jk());
@@ -853,18 +912,30 @@ public final class HostServer implements jv {
         world().a((lw)it);
     }
 
+    /**
+     * Пакет 7 (UseEntity): флаг 1 — удар (левая кнопка, на клиенте это eb2.c(lw)), флаг 0 — "использовать"
+     * (правая кнопка: сесть на свинью/в лодку, стричь и т.п., eb2.a_(lw)). Раньше удары обрабатывались как
+     * "использование", поэтому по мобам и по хосту ударить было нельзя.
+     */
     private void attack(Guest g, a u) {
-        if (u.c != 1) return;
+        ps self = g.entity;
+        if (self == null || self.aN || self.J <= 0) return;
         lw target = null;
         List all = world().b;
         for (int i = 0; i < all.size(); i++) {
             lw o = (lw)all.get(i);
             if (o.an == u.b) { target = o; break; }
         }
-        if (target == null || target == g.entity || target.aN) return;
-        double dx = g.entity.aw - target.aw, dy = g.entity.ax - target.ax, dz = g.entity.ay - target.ay;
-        if (dx * dx + dy * dy + dz * dz > 36.0) return;
-        g.entity.a_(target);
+        if (target == null || target == self || target.aN) return;
+        double dx = self.aw - target.aw, dy = (self.ax + 1.62) - (target.ax + (target instanceof ps ? 1.62 : 0.0)), dz = self.ay - target.ay;
+        if (dx * dx + dy * dy + dz * dz > 49.0) return;     // дальше ~7 блоков — не бьём
+        if (u.c == 1) {
+            self.c(target);
+            fs hurt = new fs();                              // хостовый моб/игрок дёрнулся — покажем всем гостям
+            hurt.a = target.an; hurt.b = (byte)2;
+        } else {
+            self.a_(target);
+        }
     }
 
     // ============================================ синхронизация сущностей мира
@@ -932,6 +1003,55 @@ public final class HostServer implements jv {
         }
     }
 
+    private int hostHeld = 0;
+    private boolean hostSwing = false, hostSneak = false;
+    private final Map<Integer, Integer> heldSent = new HashMap<Integer, Integer>();
+
+    /**
+     * Что другие видят у игрока в руках и как он действует. В протоколе Alpha предмет в руке передаётся только
+     * при появлении игрока (пакет 20), поэтому при смене предмета модель игрока у остальных пересоздаётся
+     * (удаление + появление) — для этого достаточно доли секунды. Взмах руки и приседание хоста шлём пакетом 18.
+     */
+    private void syncPlayerLooks() {
+        lw host = ctx.player();
+        if (host instanceof Player) {
+            Player hp = (Player)host;
+            if (hp.j && !hostSwing) { ii sw = new ii(); sw.a = host.an; sw.b = 1; broadcast(sw); }
+            hostSwing = hp.j;
+            if (host.bw != hostSneak) {
+                hostSneak = host.bw;
+                ii sn = new ii(); sn.a = host.an; sn.b = hostSneak ? 104 : 105; broadcast(sn);
+            }
+            int now = heldId(host);
+            if (now != hostHeld) {
+                hostHeld = now;
+                respawnLook(null, host, ctx.hostName(), host.aG.b, now);
+            }
+        }
+        for (Guest g : guests) {
+            if (g.phase != PHASE_PLAY || g.entity == null || g.entity.aN) continue;
+            int now = heldId(g.entity);
+            Integer was = heldSent.get(g.entity.an);
+            if (was == null) { heldSent.put(g.entity.an, now); continue; }
+            if (was.intValue() != now) {
+                heldSent.put(g.entity.an, now);
+                respawnLook(g, g.entity, g.name, g.entity.ax, now);
+            }
+        }
+    }
+
+    /** Пересоздать модель игрока у остальных гостей (кроме владельца) — с новым предметом в руке. */
+    private void respawnLook(Guest owner, lw e, String name, double feetY, int held) {
+        li gone = new li(); gone.a = e.an;
+        hs s = spawnPlayerPacket(e.an, name, e.aw, feetY, e.ay, e.aC, e.aD, held);
+        for (Guest g : guests) {
+            if (g == owner || g.phase != PHASE_PLAY) continue;
+            send(g, gone);
+            send(g, s);
+        }
+        lastSent.remove(e.an);   // следующий пакет позиции уйдёт сразу
+    }
+
     private final Map<Integer, int[]> mobState = new HashMap<Integer, int[]>();   // id -> {последний hurtTime, смерть отправлена}
 
     /** Анимации "ударили" (статус 2) и "умер" (статус 3) для мобов — чтобы гости видели, как моб получает урон. */
@@ -975,6 +1095,7 @@ public final class HostServer implements jv {
                 if (g.phase != PHASE_PLAY || g.entity == null) continue;
                 double dx = g.entity.aw - e.aw, dy = g.entity.aG.b - e.ax, dz = g.entity.ay - e.ay;
                 if (Math.abs(dx) < 1.2 && Math.abs(dz) < 1.2 && dy > -1.5 && dy < 2.0) {
+                    g.entity.e.a(new InventoryItem(it.a.id, it.a.count, it.a.damage));   // зеркало инвентаря гостя на сервере
                     mt give = new mt();
                     give.a = it.a.id; give.b = it.a.count; give.c = it.a.damage;
                     send(g, give);

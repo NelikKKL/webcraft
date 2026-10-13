@@ -305,6 +305,8 @@
         throw new Error('unsupported skin size ' + r.w + 'x' + r.h + ' (need 64x32, 64x64 or HD multiples)');
       }
       window.__javaSkin.set(r.w, r.h, r.rgba);
+      // исходный PNG своего скина — его мультиплеер отправляет другим игрокам (пакет 200)
+      if (blob.arrayBuffer) blob.arrayBuffer().then(function (ab) { window.__localSkinPng = ab.byteLength <= 200000 ? new Uint8Array(ab) : null; });
       if (persist) {
         try { localStorage.setItem(SKIN_KEY, r.canvas.toDataURL('image/png')); }
         catch (e) { console.warn('Could not save skin:', e); }
@@ -348,7 +350,18 @@
     },
 
     forget: function () {
+      window.__localSkinPng = null;
       try { localStorage.removeItem(SKIN_KEY); } catch (e) {}
+    },
+
+    // Скин другого игрока (PNG из пакета 200) -> RGBA -> Java (SkinStore.onSetFor)
+    decodeFor: function (id, slim, u8) {
+      createImageBitmap(new Blob([u8], { type: 'image/png' })).then(function (bmp) {
+        var r = bitmapToRgba(bmp);
+        if (bmp.close) bmp.close();
+        if (!skinSizeOk(r.w, r.h)) return;
+        window.__javaSkin.setFor(id, r.w, r.h, !!slim, r.rgba);
+      }).catch(function (e) { console.warn('Remote skin failed:', e); });
     }
   };
 

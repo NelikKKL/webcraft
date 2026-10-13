@@ -43,6 +43,15 @@ extends ec {
 
     public void a(Player eb2, double d2, double d3, double d4, float f2, float f3) {
         float f4;
+        // Модель и текстура у каждого игрока свои: чужие — из пакета 200 (ps.skinModern/skinSlim), свои — из SkinStore.
+        if (this.a instanceof PlayerModel) {
+            PlayerModel pm = (PlayerModel)this.a;
+            if (eb2 instanceof ps) {
+                pm.configure(((ps)eb2).skinModern, ((ps)eb2).skinSlim);
+            } else {
+                pm.configureLocal();
+            }
+        }
         InventoryItem fp2 = eb2.e.a();
         this.a.i = fp2 != null;
         this.h.i = this.a.i;
@@ -183,6 +192,7 @@ extends ec {
 
     public void b() {
         PlayerModel pm = (PlayerModel)this.a;
+        pm.configureLocal();
         pm.prepare();   // раскладка частей под текущий скин (классика / 64x64 / slim)
         this.a.k = 0.0f;
         this.a.a(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0625f);

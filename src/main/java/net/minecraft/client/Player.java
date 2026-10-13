@@ -26,7 +26,7 @@ extends Mob {
         this.C = "humanoid";
         this.B = 180.0f;
         this.bf = 20;
-        this.z = net.minecraft.client.web.SkinStore.texturePath();   // свой скин или /mob/char.png
+        this.z = "/mob/char.png";   // скин по умолчанию; свой скин задаёт bq (локальный игрок), чужие — ps из пакета 200
     }
 
     @Override
