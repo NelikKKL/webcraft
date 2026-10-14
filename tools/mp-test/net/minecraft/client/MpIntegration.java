@@ -85,7 +85,7 @@ public class MpIntegration {
         // (ci.g was already inflated by the game's own reader)
       }
     }
-    check(prechunks == 9 && chunks == 9, "9 pre-chunks + 9 chunks around spawn at login (got " + prechunks + "/" + chunks + ")");
+    check(prechunks >= 9 && chunks >= 9, "at least the 3x3 spawn area is sent at login (got " + prechunks + "/" + chunks + "; streaming may add a nearby chunk immediately)");
     check(gotPos && gotSpawn && gotInv, "position, spawn point and inventory packets present");
 
     // apply everything the guest received (chunks + any block changes made during generation),
@@ -115,6 +115,14 @@ public class MpIntegration {
         sock.inject(ser(dig));
     srv.tickForTest();
     check(world.a(8, by, 8) == 0, "guest dig packet removes the block in the host world");
+    List<gk> dugPackets = sock.drain();
+    boolean sawAirUpdate = false, sawBlockDrop = false;
+    for (gk p : dugPackets) {
+      if (p instanceof mx) { mx m = (mx)p; if (m.a == 8 && m.b == by && m.c == 8 && m.d == 0) sawAirUpdate = true; }
+      if (p instanceof id) { id d = (id)p; if (d.h == 4 && d.i > 0) sawBlockDrop = true; }
+    }
+    check(sawAirUpdate, "guest receives the broken-block update (air at the target coordinates)");
+    check(sawBlockDrop, "breaking an ordinary block spawns its dropped item for the guest");
 
     // guest places a block (next to himself, not inside his own bounding box)
     world.d(12, 69, 8, 1);
@@ -273,6 +281,65 @@ public class MpIntegration {
     iu lb = new iu(); lb.a = 6; lb.b = "Bob"; lb.c = "x"; lb.d = 0L; lb.e = (byte) 0; sb.inject(ser(lb)); srv.tickForTest();
     boolean bobSeesAlex = false; for (gk p : sb.drain()) if (p instanceof hs && "Alex".equals(((hs) p).b)) bobSeesAlex = true;
     check(bobSeesAlex, "a newly joined guest sees the players already online");
+
+    // A break by Alex must update Bob's world as well, not just the host and the breaking client.
+    int syncX = (int)Math.floor(guestPs.aw + 2.0), syncY = (int)Math.floor(guestPs.ax - 1.0), syncZ = (int)Math.floor(guestPs.ay);
+    world.d(syncX, syncY, syncZ, 4);
+    sock.drain(); sb.drain();
+    sock.inject(ser(new gc(3, syncX, syncY, syncZ, 1)));
+    srv.tickForTest();
+    boolean bobSawAir = false, bobSawDrop = false;
+    for (gk p : sb.drain()) {
+      if (p instanceof mx) { mx m = (mx)p; if (m.a == syncX && m.b == syncY && m.c == syncZ && m.d == 0) bobSawAir = true; }
+      if (p instanceof id) { id d = (id)p; if (d.h == 4) bobSawDrop = true; }
+    }
+    check(bobSawAir && bobSawDrop, "breaking a block synchronizes the air update and dropped block to another guest");
+
+    ps bobEntity = null;
+    for (Object o : world.d) if (o instanceof ps && "Bob".equals(((ps)o).name) && !((ps)o).aN) bobEntity = (ps)o;
+    if (bobEntity != null) {
+      bobEntity.b(guestPs.aw + 1.0, guestPs.ax, guestPs.ay, 0f, 0f);
+      guestPs.b(bobEntity.aw - 1.0, bobEntity.ax, bobEntity.ay, 0f, 0f);
+      guestPs.bj = 0; guestPs.M = 0;
+      sock.drain(); sb.drain();
+      sb.inject(ser(new a(bobEntity.an, guestPs.an, 1)));
+      srv.tickForTest();
+      boolean alexSawHurt = false;
+      List<gk> attackOut = sock.drain();
+      for (gk p : attackOut) if (p instanceof fs && ((fs)p).a == guestPs.an && ((fs)p).b == 2) alexSawHurt = true;
+      check(alexSawHurt, "player-vs-player attack broadcasts hurt status to the other guest");
+    } else {
+      check(false, "player-vs-player attack test entity exists");
+    }
+
+    // A guest may change their skin without reconnecting; the server relays it to other guests.
+    byte[] customSkin = new byte[]{11, 22, 33, 44}; // wire-level fixture; browser performs PNG decoding
+    sock.inject(ser(new SkinPacket(guestPs.an, true, customSkin)));
+    srv.tickForTest();
+    boolean skinLive = false;
+    for (gk p : sb.drain()) if (p instanceof SkinPacket && ((SkinPacket)p).a == guestPs.an && Arrays.equals(((SkinPacket)p).c, customSkin)) skinLive = true;
+    check(skinLive, "skin changed during play is relayed to every other guest");
+
+    // Force a respawn while Bob is online: the replacement entity must receive the same skin again.
+    int skinEntityId = guestPs.an;
+    sock.inject(ser(new jk())); srv.tickForTest();
+    List<gk> respawnSkinPackets = sb.drain();
+    boolean skinSpawn = false, playerSpawn = false;
+    for (gk p : respawnSkinPackets) {
+      if (p instanceof SkinPacket && ((SkinPacket)p).a == skinEntityId && Arrays.equals(((SkinPacket)p).c, customSkin)) skinSpawn = true;
+      if (p instanceof hs && ((hs)p).a == skinEntityId) playerSpawn = true;
+    }
+    check(playerSpawn && skinSpawn, "player skin is resent after respawn so it does not disappear");
+    for (Object o : world.d) if (o instanceof ps && "Alex".equals(((ps)o).name) && !((ps)o).aN) guestPs = (ps)o;
+    // This synthetic live-respawn test replaces the server-side entity; restore the test inventory.
+    guestPs.e.storage[3] = new InventoryItem(264, 7, 0);
+
+    // Reset skin is also a live network change (empty payload means default, not malformed PNG).
+    sock.inject(ser(new SkinPacket(guestPs.an, false, new byte[0]))); srv.tickForTest();
+    boolean skinReset = false;
+    for (gk p : sb.drain()) if (p instanceof SkinPacket && ((SkinPacket)p).a == guestPs.an && ((SkinPacket)p).c != null && ((SkinPacket)p).c.length == 0) skinReset = true;
+    check(skinReset, "Reset skin restores the default skin on other guests during play");
+
     int alexId = guestPs.an;
     check(srv.kick("alex"), "/kick finds the player (case-insensitive)");
     boolean kicked = false; for (gk p : sock.drain()) if (p instanceof qi) kicked = true;

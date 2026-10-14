@@ -604,3 +604,12 @@ getResource-связанные), все обнаружены третьим CI-�
 - `mq.java` — `ImageIO.read(httpURLConnection.getInputStream())` — загрузка
   скинов по сети (Mojang API) — требует CORS-совместимого прокси или
   альтернативного источника, не решается на уровне ImageIO-моста.
+
+
+## MULTIPLAYER FIXES (2026-10-14)
+
+* **Block drops and block updates:** `HostServer.dig` now runs the general block-drop path in addition to the block's break callback. Ordinary blocks previously disappeared for guests without creating an item entity. The existing world listener sends the resulting air/block state to every guest whose chunk is loaded.
+* **Player hurt flash:** successful player-on-player damage now broadcasts status packet 38 (hurt) to guests; the victim's `lastHurt` marker is advanced to avoid sending the same status again on the next tick. Entity lookup skips dead entities, important when respawn temporarily leaves the old entity with the same ID in the world's entity list.
+* **Skins across respawn and live changes:** respawning a guest now reapplies/rebroadcasts their saved skin after the replacement player spawn. An empty skin-packet payload means “restore the default skin”, so changing or resetting a skin during multiplayer updates the host and other guests without reconnecting.
+* **Connection bookkeeping:** removed duplicate registration of each guest in the host's guest list, which caused the same connection to be processed twice per tick.
+* **Regression checks:** `sh tools/mp-test/run.sh` now covers block-state/drop delivery to another guest, player-vs-player hurt animation packets, live skin changes, skin restore after respawn, and resetting to the default skin.

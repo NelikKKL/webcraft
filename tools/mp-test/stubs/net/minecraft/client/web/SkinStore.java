@@ -4,4 +4,8 @@ public final class SkinStore {
   public static String texturePath(){return DEFAULT_PATH;}
   public static boolean isModern(){return false;} public static boolean isSlim(){return false;} public static boolean hasSkin(){return false;}
   public static String nick(){return "Player";}
+  public static int localVersion(){return 0;}
+  public static byte[] localPng(){return null;}
+  public static void queueRemote(int id, boolean slim, byte[] png){}
+  public static void queueRemoteDefault(int id){}
 }

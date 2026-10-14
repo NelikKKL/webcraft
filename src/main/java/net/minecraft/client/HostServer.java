@@ -644,19 +644,28 @@ public final class HostServer implements jv {
 
     /** Гость прислал свой скин: применить к его сущности на хосте и разослать остальным. */
     private void skinFromGuest(Guest g, SkinPacket p) {
-        if (g.entity == null || p.c == null || p.c.length == 0 || p.c.length > SkinPacket.MAX_BYTES) return;
-        g.skinPng = p.c;
+        if (g.entity == null || p.c == null || p.c.length > SkinPacket.MAX_BYTES) return;
         g.skinSlim = p.b == 1;
+        if (p.c.length == 0) {
+            // Пустой PNG = вернуть стандартный скин. Нужен отдельный сетевой маркер,
+            // иначе Reset skin во время игры оставляет старую текстуру у остальных.
+            g.skinPng = null;
+            g.skinSlim = false;
+            net.minecraft.client.web.SkinStore.queueRemoteDefault(g.entity.an);
+            broadcastExcept(g, new SkinPacket(g.entity.an, false, new byte[0]));
+            return;
+        }
+        g.skinPng = p.c;
         net.minecraft.client.web.SkinStore.queueRemote(g.entity.an, g.skinSlim, g.skinPng);   // хост тоже видит скин
         broadcastExcept(g, new SkinPacket(g.entity.an, g.skinSlim, g.skinPng));
     }
 
-    /** Свой скин хоста -> всем гостям (при входе гостя и при смене скина). */
+    /** Свой скин хоста -> всем гостям (при входе гостя и при смене/сбросе скина). */
     private void sendHostSkin(Guest only) {
         byte[] png = net.minecraft.client.web.SkinStore.localPng();
         lw host = ctx.player();
-        if (png == null || host == null) return;
-        SkinPacket sp = new SkinPacket(host.an, net.minecraft.client.web.SkinStore.isSlim(), png);
+        if (host == null) return;
+        SkinPacket sp = new SkinPacket(host.an, net.minecraft.client.web.SkinStore.isSlim(), png == null ? new byte[0] : png);
         if (only != null) send(only, sp); else broadcast(sp);
     }
 
@@ -696,6 +705,13 @@ public final class HostServer implements jv {
         heldSent.remove(id);
         li gone = new li(); gone.a = id; broadcastExcept(g, gone);                         // другие гости: убрать труп
         broadcastExcept(g, spawnPlayerPacket(id, g.name, x, y, z, 0f, 0f));              // и показать возродившегося
+        if (g.skinPng != null && g.skinPng.length > 0) {
+            net.minecraft.client.web.SkinStore.queueRemote(id, g.skinSlim, g.skinPng);
+            broadcastExcept(g, new SkinPacket(id, g.skinSlim, g.skinPng));
+        } else {
+            net.minecraft.client.web.SkinStore.queueRemoteDefault(id);
+            broadcastExcept(g, new SkinPacket(id, false, new byte[0]));
+        }
         send(g, new jk());
         send(g, new p(-1, new InventoryItem[37]));
         send(g, new cr(x, y + 1.62, y, z, 0f, 0f, true));
@@ -775,7 +791,13 @@ public final class HostServer implements jv {
         int meta = w.e(x, y, z);
         Block b = Block.registry[id];
         boolean ok = w.d(x, y, z, 0);
-        if (ok) b.b(w, x, y, z, meta);
+        if (ok) {
+            // Block callback handles special effects; the generic drop path is separate.
+            // The old handler only called b(...), so ordinary blocks (stone, dirt,
+            // planks, etc.) vanished without spawning an item for guests to collect.
+            b.b(w, x, y, z, meta);
+            b.a(w, x, y, z, meta, 1.0f);
+        }
     }
 
     private void place(Guest g, ed p) {
@@ -924,15 +946,22 @@ public final class HostServer implements jv {
         List all = world().b;
         for (int i = 0; i < all.size(); i++) {
             lw o = (lw)all.get(i);
-            if (o.an == u.b) { target = o; break; }
+            if (o.an == u.b && !o.aN) { target = o; break; }
         }
         if (target == null || target == self || target.aN) return;
         double dx = self.aw - target.aw, dy = (self.ax + 1.62) - (target.ax + (target instanceof ps ? 1.62 : 0.0)), dz = self.ay - target.ay;
         if (dx * dx + dy * dy + dz * dz > 49.0) return;     // дальше ~7 блоков — не бьём
         if (u.c == 1) {
+            int oldHurt = target instanceof Player ? ((Player)target).M : 0;
             self.c(target);
-            fs hurt = new fs();                              // хостовый моб/игрок дёрнулся — покажем всем гостям
-            hurt.a = target.an; hurt.b = (byte)2;
+            if (target instanceof Player && ((Player)target).M > oldHurt) {
+                fs hurt = new fs();
+                hurt.a = target.an; hurt.b = (byte)2;
+                broadcast(hurt);
+                for (Guest victim : guests) {
+                    if (victim.entity == target) victim.lastHurt = ((Player)target).M;
+                }
+            }
         } else {
             self.a_(target);
         }

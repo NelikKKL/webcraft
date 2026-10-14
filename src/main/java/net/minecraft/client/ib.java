@@ -64,14 +64,18 @@ extends mo {
     private void sendOwnSkin() {
         this.skinVersionSent = net.minecraft.client.web.SkinStore.localVersion();
         byte[] png = net.minecraft.client.web.SkinStore.localPng();
-        if (png != null && this.e != null && this.e.g != null) {
-            this.d.a((gk)new SkinPacket(this.e.g.an, net.minecraft.client.web.SkinStore.isSlim(), png));
+        if (this.e != null && this.e.g != null) {
+            // Нулевой payload означает Reset skin; без него у остальных остаётся старая текстура.
+            this.d.a((gk)new SkinPacket(this.e.g.an, png == null ? false : net.minecraft.client.web.SkinStore.isSlim(), png == null ? new byte[0] : png));
         }
     }
 
     @Override
     public void a(SkinPacket skinPacket) {
-        if (skinPacket.c != null) {
+        if (skinPacket.c == null) return;
+        if (skinPacket.c.length == 0) {
+            net.minecraft.client.web.SkinStore.queueRemoteDefault(skinPacket.a);
+        } else {
             net.minecraft.client.web.SkinStore.queueRemote(skinPacket.a, skinPacket.b == 1, skinPacket.c);
         }
     }

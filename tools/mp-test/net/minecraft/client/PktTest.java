@@ -38,6 +38,10 @@ public class PktTest {
     li d=new li(); d.a=12; check(((li)roundTrip(d)).a==12,"destroy");
     check(((jr)roundTrip(new jr("<A> hi"))).a.equals("<A> hi"),"chat");
     check(((qi)roundTrip(new qi("bye"))).a.equals("bye"),"kick");
+    SkinPacket skin=(SkinPacket)roundTrip(new SkinPacket(44,true,new byte[]{1,2,3,4}));
+    check(skin.a==44 && skin.b==1 && Arrays.equals(skin.c,new byte[]{1,2,3,4}),"skin packet");
+    SkinPacket reset=(SkinPacket)roundTrip(new SkinPacket(44,false,new byte[0]));
+    check(reset.a==44 && reset.c!=null && reset.c.length==0,"empty skin packet resets to default skin");
     bu col=new bu(); col.a=4; col.b=6; bu col2=(bu)roundTrip(col); check(col2.a==4&&col2.b==6,"collect");
     mt give=new mt(); give.a=264; give.b=3; give.c=0; mt g2=(mt)roundTrip(give); check(g2.a==264&&g2.b==3,"giveitem");
     check(roundTrip(new hl()) instanceof hl,"keepalive");

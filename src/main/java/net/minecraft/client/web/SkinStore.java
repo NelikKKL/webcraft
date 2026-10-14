@@ -113,6 +113,12 @@ public final class SkinStore {
         decodeForNative(entityId, slim, arr);
     }
 
+    /** Удалить пользовательскую текстуру чужого игрока и назначить стандартный скин. */
+    public static void queueRemoteDefault(int entityId) {
+        ResourceCache.removeDynamic(remotePath(entityId));
+        ready.add(new Remote(entityId, DEFAULT_PATH, false, false));
+    }
+
     @JSBody(params = { "id", "slim", "bytes" }, script = "if (window.Skins) { window.Skins.decodeFor(id, slim, bytes); }")
     private static native void decodeForNative(int id, boolean slim, Uint8Array bytes);
 
