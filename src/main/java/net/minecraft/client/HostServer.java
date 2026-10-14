@@ -120,6 +120,7 @@ public final class HostServer implements jv {
         float fall = 0f;
         boolean deathAnnounced = false;
         int lastHurt = 0;
+        int cactusCooldown = 0;
         byte[] skinPng = null;      // скин гостя (пакет 200) и флаг тонких рук
         boolean skinSlim = false;
         // открытый контейнер (сундук, печь, раздатчик, табличка): позиция и последнее отправленное состояние
@@ -258,9 +259,12 @@ public final class HostServer implements jv {
         }
         if (tickCount % 2 == 0) { syncEntities(); syncPlayerLooks(); }
         int sv = net.minecraft.client.web.SkinStore.localVersion();
-        if (sv != hostSkinVersion) {              // хост сменил скин — разослать (первый раз — просто запомнить)
-            if (hostSkinVersion >= 0) sendHostSkin(null);
+        int hostId = ctx.player() == null ? Integer.MIN_VALUE : ctx.player().an;
+        // Скин нужно отправлять не только при смене PNG: после смерти/респавна хост получает новую сущность/ID.
+        if (sv != hostSkinVersion || hostId != hostSkinEntityId) {
+            if (hostSkinVersion >= 0 || hostSkinEntityId != Integer.MIN_VALUE) sendHostSkin(null);
             hostSkinVersion = sv;
+            hostSkinEntityId = hostId;
         }
         pickups();
     }
@@ -562,6 +566,7 @@ public final class HostServer implements jv {
         ps ent = g.entity;
         if (ent == null) return;
         guestVitals(g, ent);
+        tickGuestCactus(g, ent);
         if (tickCount % 5 == 0) watchOpenTile(g);
         lw e = g.entity;
         int cx = (int)Math.floor(e.aw / 16.0), cz = (int)Math.floor(e.ay / 16.0);
@@ -611,10 +616,34 @@ public final class HostServer implements jv {
         }
     }
 
+    /** Урон от кактуса: движение гостя обрабатывается клиентом, поэтому серверный мир не всегда
+     * выполняет обычный block-collision callback для удалённой сущности. Проверяем контакт на сервере. */
+    private void tickGuestCactus(Guest g, ps ent) {
+        if (g.cactusCooldown > 0) g.cactusCooldown--;
+        if (ent.J <= 0 || g.cactusCooldown > 0) return;
+        Session w = world();
+        if (w == null) return;
+        int minX = (int)Math.floor(ent.aw - 0.35), maxX = (int)Math.floor(ent.aw + 0.35);
+        int minY = (int)Math.floor(ent.ax + 0.05), maxY = (int)Math.floor(ent.ax + 1.75);
+        int minZ = (int)Math.floor(ent.ay - 0.35), maxZ = (int)Math.floor(ent.ay + 0.35);
+        for (int x = minX; x <= maxX; x++) for (int y = minY; y <= maxY; y++) for (int z = minZ; z <= maxZ; z++) {
+            if (w.a(x, y, z) == 81) { // Alpha cactus block ID
+                if (ent.a((lw)null, 1)) {
+                    g.cactusCooldown = 10;
+                    return;
+                }
+                // Даже если damage API сообщает false во время hurt immunity, не спамим каждый тик.
+                g.cactusCooldown = 10;
+                return;
+            }
+        }
+    }
+
     // ------------------------------------------------------------ здоровье, смерть, возрождение гостя
     /** Здоровье -> клиенту (пакет 8), урон -> отдача и анимация, смерть -> сообщение в чат. */
     private void guestVitals(Guest g, ps ent) {
         int hp = ent.J;
+        int previousHealth = g.lastHealth;
         if (hp != g.lastHealth) {
             cq c = new cq();
             c.a = Math.max(hp, 0);
@@ -626,7 +655,8 @@ public final class HostServer implements jv {
             }
             g.lastHealth = hp;
         }
-        if (ent.M > g.lastHurt && hp > 0) {                       // остальные гости видят, что игрока ударили
+        // M — таймер hurtTime, который убывает, а не растёт. Также ловим урон по изменению HP.
+        if (hp > 0 && ((previousHealth >= 0 && hp < previousHealth) || (ent.M > 0 && g.lastHurt <= 0))) {
             fs f = new fs(); f.a = ent.an; f.b = (byte)2; broadcastExcept(g, f);
         }
         g.lastHurt = ent.M;
@@ -641,6 +671,7 @@ public final class HostServer implements jv {
 
     // ------------------------------------------------------------ скины (пакет 200)
     private int hostSkinVersion = -1;
+    private int hostSkinEntityId = Integer.MIN_VALUE;
 
     /** Гость прислал свой скин: применить к его сущности на хосте и разослать остальным. */
     private void skinFromGuest(Guest g, SkinPacket p) {
@@ -953,8 +984,9 @@ public final class HostServer implements jv {
         if (dx * dx + dy * dy + dz * dz > 49.0) return;     // дальше ~7 блоков — не бьём
         if (u.c == 1) {
             int oldHurt = target instanceof Player ? ((Player)target).M : 0;
+            int oldHealth = target instanceof Player ? ((Player)target).J : -1;
             self.c(target);
-            if (target instanceof Player && ((Player)target).M > oldHurt) {
+            if (target instanceof Player && (((Player)target).J < oldHealth || (((Player)target).M > 0 && oldHurt <= 0))) {
                 fs hurt = new fs();
                 hurt.a = target.an; hurt.b = (byte)2;
                 broadcast(hurt);

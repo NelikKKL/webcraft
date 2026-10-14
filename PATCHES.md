@@ -613,3 +613,11 @@ getResource-связанные), все обнаружены третьим CI-�
 * **Skins across respawn and live changes:** respawning a guest now reapplies/rebroadcasts their saved skin after the replacement player spawn. An empty skin-packet payload means “restore the default skin”, so changing or resetting a skin during multiplayer updates the host and other guests without reconnecting.
 * **Connection bookkeeping:** removed duplicate registration of each guest in the host's guest list, which caused the same connection to be processed twice per tick.
 * **Regression checks:** `sh tools/mp-test/run.sh` now covers block-state/drop delivery to another guest, player-vs-player hurt animation packets, live skin changes, skin restore after respawn, and resetting to the default skin.
+
+## MULTIPLAYER FOLLOW-UP FIXES (2026-10-14)
+
+* **Reliable hurt flash:** `hurtTime` is a countdown, not a monotonically increasing counter. The old `M > lastHurt` check missed many hits. The server now detects HP decreases and the transition into hurt-time, and player attack handling also checks actual HP loss.
+* **Host skin after death/respawn:** the host's skin is resent when the host entity ID changes, even when the selected PNG/version stays the same.
+* **Cactus damage for guests:** because remote-player movement is client-driven, the host now checks the guest's occupied block volume for Alpha cactus (block ID 81) and applies one point of damage with a short cooldown.
+
+Build note: Maven is not installed in this environment, so a full TeaVM build could not be run here.
