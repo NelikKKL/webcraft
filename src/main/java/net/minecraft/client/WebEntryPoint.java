@@ -1,6 +1,7 @@
 package net.minecraft.client;
 
 import net.minecraft.client.web.ResourcePreloader;
+import net.minecraft.client.web.WorldStore;
 import org.teavm.jso.JSBody;
 import org.teavm.jso.JSFunctor;
 import org.teavm.jso.JSObject;
@@ -31,7 +32,8 @@ public final class WebEntryPoint {
     private static WebMinecraft minecraft;
 
     public static void main(String[] args) {
-        ResourcePreloader.preloadAll(WebEntryPoint::startGame);
+        // Hydrate persistent world files before the world-select menu can inspect slots.
+        WorldStore.loadAll(() -> ResourcePreloader.preloadAll(WebEntryPoint::startGame));
     }
 
     private static void startGame() {
@@ -41,6 +43,9 @@ public final class WebEntryPoint {
             // fullscreen=false — обычный canvas фиксированного размера.
             minecraft = new WebMinecraft(854, 480, false);
             minecraft.init();
+            WorldStore.installPageLifecycleSave(() -> {
+                if (minecraft != null) minecraft.saveWorldForBrowserExit();
+            });
         } catch (Throwable t) {
             showCrash("Failed to start game", t);
             return;

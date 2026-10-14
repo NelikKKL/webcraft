@@ -5,6 +5,7 @@ package net.minecraft.client;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import net.minecraft.client.web.WorldStore;
 
 public class mu
 implements ai {
@@ -43,27 +44,23 @@ implements ai {
 
     @Override
     public ha a(Session cy2, int n2, int n3) {
+        // Prefer persistent browser storage. If there is no saved copy, retain
+        // the normal filesystem path for desktop/JVM use and same-session fallback.
+        if (WorldStore.isEnabled()) {
+            String saved = WorldStore.get(this.storageKey(n2, n3));
+            if (saved != null) {
+                try {
+                    return this.loadChunk(cy2, n2, n3, ab.a(WorldStore.decode(saved)));
+                } catch (Exception exception) {
+                    System.err.println("Could not load persistent chunk " + n2 + "," + n3);
+                    exception.printStackTrace();
+                }
+            }
+        }
         File file = this.a(n2, n3);
         if (file != null && file.exists()) {
             try {
-                FileInputStream fileInputStream = new FileInputStream(file);
-                NBTCompoundTag iq2 = ab.a(fileInputStream);
-                if (!iq2.has("Level")) {
-                    System.out.println("Chunk file at " + n2 + "," + n3 + " is missing level data, skipping");
-                    return null;
-                }
-                if (!iq2.getCompoundTag("Level").has("Blocks")) {
-                    System.out.println("Chunk file at " + n2 + "," + n3 + " is missing block data, skipping");
-                    return null;
-                }
-                ha ha2 = mu.a(cy2, iq2.getCompoundTag("Level"));
-                if (!ha2.a(n2, n3)) {
-                    System.out.println("Chunk file at " + n2 + "," + n3 + " is in the wrong location; relocating. (Expected " + n2 + ", " + n3 + ", got " + ha2.j + ", " + ha2.k + ")");
-                    iq2.storeInt("xPos", n2);
-                    iq2.storeInt("zPos", n3);
-                    ha2 = mu.a(cy2, iq2.getCompoundTag("Level"));
-                }
-                return ha2;
+                return this.loadChunk(cy2, n2, n3, ab.a(new FileInputStream(file)));
             }
             catch (Exception exception) {
                 exception.printStackTrace();
@@ -72,20 +69,76 @@ implements ai {
         return null;
     }
 
+    private ha loadChunk(Session cy2, int n2, int n3, NBTCompoundTag iq2) {
+        if (!iq2.has("Level")) {
+            System.out.println("Chunk file at " + n2 + "," + n3 + " is missing level data, skipping");
+            return null;
+        }
+        if (!iq2.getCompoundTag("Level").has("Blocks")) {
+            System.out.println("Chunk file at " + n2 + "," + n3 + " is missing block data, skipping");
+            return null;
+        }
+        ha chunk = mu.a(cy2, iq2.getCompoundTag("Level"));
+        if (!chunk.a(n2, n3)) {
+            System.out.println("Chunk file at " + n2 + "," + n3 + " is in the wrong location; relocating. (Expected " + n2 + ", " + n3 + ", got " + chunk.j + ", " + chunk.k + ")");
+            iq2.getCompoundTag("Level").storeInt("xPos", n2);
+            iq2.getCompoundTag("Level").storeInt("zPos", n3);
+            chunk = mu.a(cy2, iq2.getCompoundTag("Level"));
+        }
+        return chunk;
+    }
+
+    private String storageKey(int chunkX, int chunkZ) {
+        String path = this.a.getPath().replace('\\', '/');
+        int saveIndex = path.lastIndexOf("/saves/");
+        int prefixLength = 7;
+        if (saveIndex < 0 && path.startsWith("saves/")) {
+            saveIndex = -1;
+            prefixLength = 6;
+        }
+        String relativeDirectory;
+        if (saveIndex >= 0) {
+            relativeDirectory = path.substring(saveIndex + prefixLength);
+        } else if (path.startsWith("saves/")) {
+            relativeDirectory = path.substring(prefixLength);
+        } else {
+            int index = path.indexOf("saves/");
+            relativeDirectory = index >= 0 ? path.substring(index + 6) : this.a.getName();
+        }
+        while (relativeDirectory.endsWith("/")) relativeDirectory = relativeDirectory.substring(0, relativeDirectory.length() - 1);
+        return WorldStore.chunkKey(relativeDirectory, chunkX, chunkZ);
+    }
+
     @Override
     public void a(Session cy2, ha ha2) {
         cy2.n();
         File file = this.a(ha2.j, ha2.k);
-        if (file.exists()) {
-            cy2.v -= file.length();
-        }
         try {
-            File file2 = new File(this.a, "tmp_chunk.dat");
-            FileOutputStream fileOutputStream = new FileOutputStream(file2);
             NBTCompoundTag iq2 = new NBTCompoundTag();
             NBTCompoundTag iq3 = new NBTCompoundTag();
             iq2.storeTag("Level", (NBTTag)iq3);
             this.a(ha2, cy2, iq3);
+
+            if (WorldStore.isEnabled()) {
+                String key = this.storageKey(ha2.j, ha2.k);
+                String previous = WorldStore.get(key);
+                if (previous != null) {
+                    try { cy2.v -= WorldStore.decode(previous).length; }
+                    catch (Exception ignored) { }
+                } else if (file != null && file.exists()) {
+                    cy2.v -= file.length();
+                }
+                byte[] compressedNbt = ab.a(iq2);
+                WorldStore.put(key, WorldStore.encode(compressedNbt));
+                cy2.v += compressedNbt.length;
+                return;
+            }
+
+            if (file != null && file.exists()) {
+                cy2.v -= file.length();
+            }
+            File file2 = new File(this.a, "tmp_chunk.dat");
+            FileOutputStream fileOutputStream = new FileOutputStream(file2);
             ab.a(iq2, fileOutputStream);
             fileOutputStream.close();
             if (file.exists()) {

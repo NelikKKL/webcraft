@@ -97,11 +97,44 @@ public final class ResourceCache {
     /** Возвращает запись по пути ресурса (тот же формат, что передаётся в getResource/getResourceAsStream) либо null, если ресурс не был прелоаднут/не найден. */
     public static Entry get(String path) {
         String key = normalize(path);
+        Entry entry = null;
         if (overlay != null) {
-            Entry e = overlay.get(key);
-            if (e != null) return e;
+            entry = overlay.get(key);
         }
-        return cache.get(key);
+        if (entry == null) {
+            entry = cache.get(key);
+        }
+        if ("terrain.png".equals(key)) {
+            prepareGrassSideTint(entry);
+        }
+        return entry;
+    }
+
+    /**
+     * The Alpha terrain atlas has no separate biome-tintable grass-side overlay.
+     * Reuse unused tile 255 as a white alpha mask derived from the green pixels
+     * in side tile 3. The mask is drawn over the original side texture, keeping
+     * dirt pixels unchanged while allowing the grass band to follow biome color.
+     */
+    private static void prepareGrassSideTint(Entry terrain) {
+        if (terrain == null || terrain.width != 256 || terrain.height != 256) {
+            return; // HD atlases are not supported by the legacy renderer anyway.
+        }
+        final int sideX = 3 * 16;
+        final int sideY = 0;
+        final int maskX = 15 * 16;
+        final int maskY = 15 * 16;
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) {
+                int pixel = terrain.argb[(sideY + y) * 256 + sideX + x];
+                int a = (pixel >>> 24) & 0xFF;
+                int r = (pixel >>> 16) & 0xFF;
+                int g = (pixel >>> 8) & 0xFF;
+                int b = pixel & 0xFF;
+                boolean grass = a > 128 && g > r * 1.10 && g > b * 1.05 && y < 8;
+                terrain.argb[(maskY + y) * 256 + maskX + x] = grass ? 0xFFFFFFFF : 0x00000000;
+            }
+        }
     }
 
     /** Текстовое содержимое ресурса (см. putText) либо null, если не был прелоаднут/не найден. */

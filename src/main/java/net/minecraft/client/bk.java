@@ -1026,6 +1026,11 @@ public class bk {
         float f10 = f7 * f2;
         float f11 = f7 * f3;
         float f12 = f7 * f4;
+        float grassRed = f2;
+        float grassGreen = f3;
+        float grassBlue = f4;
+        // Keep the old un-tinted side texture so dirt stays brown; the separate
+        // alpha mask below tints only its grass pixels.
         if (nq2 == Block.u) {
             f4 = 1.0f;
             f3 = 1.0f;
@@ -1063,6 +1068,8 @@ public class bk {
             }
             is2.a(f14 * f5, f17 * f5, f20 * f5);
             this.c(nq2, n2, n3, n4, nq2.a(this.a, n2, n3, n4, 2));
+            this.renderGrassSideTint(nq2, n2, n3, n4, 2,
+                    f14 * f5 * grassRed, f17 * f5 * grassGreen, f20 * f5 * grassBlue);
             bl2 = true;
         }
         if (this.d || nq2.b(this.a, n2, n3, n4 + 1, 3)) {
@@ -1072,6 +1079,8 @@ public class bk {
             }
             is2.a(f14 * f5, f17 * f5, f20 * f5);
             this.d(nq2, n2, n3, n4, nq2.a(this.a, n2, n3, n4, 3));
+            this.renderGrassSideTint(nq2, n2, n3, n4, 3,
+                    f14 * f5 * grassRed, f17 * f5 * grassGreen, f20 * f5 * grassBlue);
             bl2 = true;
         }
         if (this.d || nq2.b(this.a, n2 - 1, n3, n4, 4)) {
@@ -1081,6 +1090,8 @@ public class bk {
             }
             is2.a(f15 * f5, f18 * f5, f21 * f5);
             this.e(nq2, n2, n3, n4, nq2.a(this.a, n2, n3, n4, 4));
+            this.renderGrassSideTint(nq2, n2, n3, n4, 4,
+                    f15 * f5 * grassRed, f18 * f5 * grassGreen, f21 * f5 * grassBlue);
             bl2 = true;
         }
         if (this.d || nq2.b(this.a, n2 + 1, n3, n4, 5)) {
@@ -1090,9 +1101,28 @@ public class bk {
             }
             is2.a(f15 * f5, f18 * f5, f21 * f5);
             this.f(nq2, n2, n3, n4, nq2.a(this.a, n2, n3, n4, 5));
+            this.renderGrassSideTint(nq2, n2, n3, n4, 5,
+                    f15 * f5 * grassRed, f18 * f5 * grassGreen, f21 * f5 * grassBlue);
             bl2 = true;
         }
         return bl2;
+    }
+
+    /** Draw tile 255 (a transparent mask of tile 3's grass pixels) over one side. */
+    private void renderGrassSideTint(Block block, int x, int y, int z, int face,
+                                     float red, float green, float blue) {
+        if (block != Block.u || this.b >= 0 || block.a(this.a, x, y, z, face) != 3) {
+            return; // don't tint snowy sides or caller-forced block textures
+        }
+        is renderer = is.a;
+        renderer.a(red, green, blue);
+        switch (face) {
+            case 2: this.c(block, x, y, z, 255); break;
+            case 3: this.d(block, x, y, z, 255); break;
+            case 4: this.e(block, x, y, z, 255); break;
+            case 5: this.f(block, x, y, z, 255); break;
+            default: return;
+        }
     }
 
     public boolean l(Block nq2, int n2, int n3, int n4) {

@@ -31,4 +31,6 @@ $JAVAC -nowarn -proc:none -d "$OUT/stubs" tools/mp-test/stubs/net/minecraft/clie
 $JAVAC -nowarn -proc:none -cp "$OUT/game" -d "$OUT/tests" tools/mp-test/net/minecraft/client/*.java 2>&1 | grep -v '^Note:' || true
 CP="$OUT/stubs:$OUT/game:$OUT/tests"
 echo "== PktTest =="; java -cp "$CP" net.minecraft.client.PktTest
+echo "== WorldStoreCodecTest =="; java -cp "$CP" net.minecraft.client.WorldStoreCodecTest
+echo "== GrassTintTest =="; java -cp "$CP" net.minecraft.client.GrassTintTest
 echo "== MpIntegration =="; java -cp "$CP" net.minecraft.client.MpIntegration 2>&1 | grep -v 'Loading texture\|Player count'
