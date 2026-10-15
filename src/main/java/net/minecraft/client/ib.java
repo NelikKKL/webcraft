@@ -53,6 +53,7 @@ extends mo {
         this.e.a(this.f);
         this.e.a(new du(this));
         this.e.g.an = iu2.a;
+        net.minecraft.client.web.SkinStore.clearKnown();   // скины прошлой сессии (id сущностей могли совпасть)
         System.out.println("clientEntityId: " + iu2.a);
         this.sendOwnSkin();
     }
@@ -153,6 +154,14 @@ extends mo {
         float f2 = (float)(hs2.f * 360) / 256.0f;
         float f3 = (float)(hs2.g * 360) / 256.0f;
         ps ps2 = new ps(this.e.e, hs2.b);
+        // Хост пересоздаёт модель игрока при смене предмета в руке (удаление + появление). Новая сущность
+        // стартует со скином по умолчанию, а пакет скина (200) больше не приходит — берём последний известный.
+        net.minecraft.client.web.SkinStore.Remote known = net.minecraft.client.web.SkinStore.known(hs2.a);
+        if (known != null) {
+            ps2.z = known.path;
+            ps2.skinModern = known.modern;
+            ps2.skinSlim = known.slim;
+        }
         ps2.br = hs2.c;
         ps2.bs = hs2.d;
         ps2.bt = hs2.e;
@@ -213,6 +222,10 @@ extends mo {
             d2 = fa2.a;
             d3 = fa2.b;
             d4 = fa2.c;
+            // Страховка: если сервер поставил нас внутрь блоков (чанк уже есть) — поднимаемся до свободного места.
+            // Позиция в пакете — высота глаз (ноги + 1.62).
+            double feet = SpawnUtil.unstuck(this.f, d2, d3 - 1.62, d4);
+            d3 = feet + 1.62;
         }
         if (fa2.i) {
             f2 = fa2.e;

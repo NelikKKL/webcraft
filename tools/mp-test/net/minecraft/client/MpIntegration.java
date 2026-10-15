@@ -87,6 +87,10 @@ public class MpIntegration {
     }
     check(prechunks >= 9 && chunks >= 9, "at least the 3x3 spawn area is sent at login (got " + prechunks + "/" + chunks + "; streaming may add a nearby chunk immediately)");
     check(gotPos && gotSpawn && gotInv, "position, spawn point and inventory packets present");
+    for (gk p : out) if (p instanceof cr) {
+      cr c = (cr) p; int sx = (int) Math.floor(c.a), sy = (int) Math.floor(c.d), sz = (int) Math.floor(c.c);
+      check(Math.abs(c.b - (c.d + 1.62)) < 1e-9, "spawn packet: eye height = feet + 1.62 (feet y=" + c.d + ", eye=" + c.b + ")");
+    }
 
     // apply everything the guest received (chunks + any block changes made during generation),
     // then compare the WHOLE 5x5 area against the host world
@@ -218,6 +222,10 @@ public class MpIntegration {
     srv.tickForTest();
     List<gk> rs = sock.drain(); boolean respawnPkt = false, posPkt = false, healthFull = false; for (gk p : rs) { if (p instanceof jk) respawnPkt = true; if (p instanceof cr) posPkt = true; if (p instanceof cq && ((cq) p).a == 20) healthFull = true; }
     lw newGuest = null; for (Object o : world.d) if (o instanceof Player && "Alex".equals(((Player) o).name) && !((lw) o).aN) newGuest = (lw) o;
+    for (gk p : rs) if (p instanceof cr) {
+      cr c = (cr) p; int sx = (int) Math.floor(c.a), sy = (int) Math.floor(c.d), sz = (int) Math.floor(c.c);
+      check(SpawnUtil.isSafe(world, sx, sy, sz), "respawn spot is above real terrain, not inside the ground (feet y=" + c.d + ", world spawn y=" + world.n + ")");
+    }
     check(respawnPkt && posPkt && newGuest != null && newGuest.an == idBefore && ((ps) newGuest).J == 20 || (respawnPkt && posPkt && newGuest != null && newGuest.an == idBefore), "respawn: server replies with respawn+position, new entity keeps the id");
     guestPs = (ps) newGuest;
 

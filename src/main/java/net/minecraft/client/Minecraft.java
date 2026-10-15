@@ -13,8 +13,6 @@
  */
 package net.minecraft.client;
 
-import net.minecraft.client.web.WorldStore;
-
 import net.minecraft.client.awtshim.Canvas;
 import net.minecraft.client.awtshim.Color;
 import net.minecraft.client.awtshim.Component;
@@ -437,9 +435,6 @@ implements Runnable {
             this.n.c(net.minecraft.client.web.SkinStore.PATH);
         }
         if (this.g != null) {
-            // Ensure the renderer keeps using the selected local skin (z),
-            // rather than a legacy remote URL stored in bl.
-            this.g.bl = null;
             this.g.z = path;
         }
     }
@@ -491,6 +486,22 @@ implements Runnable {
         if (this.g != null) {
             this.g.name = value;
         }
+    }
+
+    /**
+     * Сохранить мир и записать изменения в IndexedDB — вызывается при закрытии/скрытии вкладки и по таймеру.
+     * Мир гостя (удалённый, Session.z) на диск не пишется.
+     */
+    public void saveWorldNow() {
+        try {
+            if (this.e != null && !this.e.z && !this.loadingActive) {
+                this.e.a(0);          // level.dat (вместе с игроком) и несколько чанков
+                this.e.a(true, null); // все изменённые чанки
+            }
+        } catch (Throwable t) {
+            t.printStackTrace();
+        }
+        net.minecraft.client.web.WorldStore.flush();
     }
 
     public void runOneFrame() {
@@ -1072,19 +1083,6 @@ implements Runnable {
 
     public boolean j() {
         return this.e != null && this.e.z;
-    }
-
-    /** Flushes the active world when the browser tab is reloaded or closed. */
-    public void saveWorldForBrowserExit() {
-        if (this.e == null) return;
-        try {
-            this.e.a(true, null);
-        } catch (Throwable t) {
-            System.err.println("Final browser world save failed: " + t);
-            t.printStackTrace();
-        } finally {
-            WorldStore.flush();
-        }
     }
 
     public void b(String string) {

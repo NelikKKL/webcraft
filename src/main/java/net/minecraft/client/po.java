@@ -44,8 +44,8 @@ public class po {
         if (dArray == null || dArray.length < n4 * n5) {
             dArray = new double[n4 * n5];
         }
-        dArray = this.e.a(dArray, n2, n3, n4, n5, 0.025f, 0.025f, 0.25);
-        this.c = this.g.a(this.c, n2, n3, n4, n5, 0.25, 0.25, 0.5882352941176471);
+        dArray = this.e.a(dArray, n2, n3, n4, n4, 0.025f, 0.025f, 0.25);
+        this.c = this.g.a(this.c, n2, n3, n4, n4, 0.25, 0.25, 0.5882352941176471);
         int n6 = 0;
         for (int i2 = 0; i2 < n4; ++i2) {
             for (int i3 = 0; i3 < n5; ++i3) {
@@ -70,9 +70,9 @@ public class po {
         if (ggArray == null || ggArray.length < n4 * n5) {
             ggArray = new gg[n4 * n5];
         }
-        this.a = this.e.a(this.a, n2, n3, n4, n5, 0.025f, 0.025f, 0.25);
-        this.b = this.f.a(this.b, n2, n3, n4, n5, 0.05f, 0.05f, 0.3333333333333333);
-        this.c = this.g.a(this.c, n2, n3, n4, n5, 0.25, 0.25, 0.5882352941176471);
+        this.a = this.e.a(this.a, n2, n3, n4, n4, 0.025f, 0.025f, 0.25);
+        this.b = this.f.a(this.b, n2, n3, n4, n4, 0.05f, 0.05f, 0.3333333333333333);
+        this.c = this.g.a(this.c, n2, n3, n4, n4, 0.25, 0.25, 0.5882352941176471);
         int n6 = 0;
         for (int i2 = 0; i2 < n4; ++i2) {
             for (int i3 = 0; i3 < n5; ++i3) {

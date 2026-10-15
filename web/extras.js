@@ -945,3 +945,77 @@
     else if (!png) toast('Drop a .zip (texture pack) or a .png (skin)', true);
   });
 })();
+
+/*
+ * ===== Сохранение миров (IndexedDB) =====
+ * Java-сторона (WorldStore.java) хранит saves/ в виртуальной файловой системе TeaVM — она живёт в памяти и
+ * пропадает при перезагрузке вкладки. Здесь — зеркало этих файлов в IndexedDB:
+ *   WorldDB.load(onFile, onDone)  — отдать все файлы (путь, Uint8Array) при старте;
+ *   WorldDB.put / remove / removePrefix + commit() — записать пачку изменений одной транзакцией.
+ * На pagehide / скрытие вкладки вызывается window.__javaWorldSave (Java сохраняет мир и вызывает commit()).
+ */
+(function () {
+  'use strict';
+  var DB_NAME = 'webcraft-worlds';
+  var STORE = 'files';
+  var handle = null;
+  var opening = null;
+  var ops = [];
+
+  function open() {
+    if (opening) return opening;
+    opening = new Promise(function (resolve, reject) {
+      if (!window.indexedDB) { reject(new Error('IndexedDB unavailable')); return; }
+      var req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = function () { req.result.createObjectStore(STORE, { keyPath: 'path' }); };
+      req.onsuccess = function () { handle = req.result; handle.onversionchange = function () { handle.close(); handle = null; opening = null; }; resolve(handle); };
+      req.onerror = function () { opening = null; reject(req.error); };
+    });
+    return opening;
+  }
+
+  function run(list) {
+    var tx = handle.transaction(STORE, 'readwrite');
+    var st = tx.objectStore(STORE);
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i];
+      if (o.t === 'put') st.put({ path: o.path, data: o.data });
+      else if (o.t === 'del') st.delete(o.path);
+      else if (o.t === 'pre') st.delete(IDBKeyRange.bound(o.path, o.path + '\uffff'));
+    }
+    tx.onerror = tx.onabort = function () { console.warn('World save failed:', tx.error); };
+  }
+
+  var WorldDB = {
+    load: function (onFile, onDone) {
+      open().then(function (db) {
+        var req = db.transaction(STORE, 'readonly').objectStore(STORE).openCursor();
+        req.onsuccess = function () {
+          var c = req.result;
+          if (c) {
+            try { onFile(c.value.path, new Uint8Array(c.value.data)); }
+            catch (e) { console.warn('World file restore failed:', c.value.path, e); }
+            c.continue();
+          } else { onDone(true); }
+        };
+        req.onerror = function () { console.warn('World load failed:', req.error); onDone(false); };
+      }).catch(function (e) { console.warn('World storage unavailable:', e); onDone(false); });
+      try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+    },
+    put: function (path, bytes) { ops.push({ t: 'put', path: path, data: bytes }); },
+    remove: function (path) { ops.push({ t: 'del', path: path }); },
+    removePrefix: function (prefix) { ops.push({ t: 'pre', path: prefix }); },
+    commit: function () {
+      if (!ops.length) return;
+      var list = ops; ops = [];
+      if (handle) { try { run(list); } catch (e) { console.warn('World save failed:', e); } return; }
+      open().then(function () { run(list); }).catch(function (e) { console.warn('World save failed:', e); });
+    }
+  };
+  window.WorldDB = WorldDB;
+  open().catch(function () {});
+
+  function onLeave() { try { if (window.__javaWorldSave) window.__javaWorldSave(); } catch (e) { console.warn(e); } }
+  window.addEventListener('pagehide', onLeave);
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') onLeave(); });
+})();

@@ -100,6 +100,12 @@ public final class SkinStore {
     }
 
     private static final java.util.ArrayList<Remote> ready = new java.util.ArrayList<>();
+    /** Последний известный скин каждой чужой сущности: нужен, когда хост пересоздаёт игрока (смена предмета в руке). */
+    private static final java.util.HashMap<Integer, Remote> known = new java.util.HashMap<>();
+
+    public static Remote known(int entityId) { return known.get(entityId); }
+
+    public static void clearKnown() { known.clear(); }
 
     public static String remotePath(int entityId) { return "/skin/remote_" + entityId + ".png"; }
 
@@ -116,6 +122,7 @@ public final class SkinStore {
     /** Удалить пользовательскую текстуру чужого игрока и назначить стандартный скин. */
     public static void queueRemoteDefault(int entityId) {
         ResourceCache.removeDynamic(remotePath(entityId));
+        known.remove(entityId);
         ready.add(new Remote(entityId, DEFAULT_PATH, false, false));
     }
 
@@ -127,7 +134,9 @@ public final class SkinStore {
         String path = remotePath(entityId);
         ResourceCache.putDynamic(path, e);
         boolean mod = (h == w);
-        ready.add(new Remote(entityId, path, mod, mod && slim));
+        Remote r = new Remote(entityId, path, mod, mod && slim);
+        known.put(entityId, r);
+        ready.add(r);
     }
 
     public static java.util.List<Remote> takeReady() {

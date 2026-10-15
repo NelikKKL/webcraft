@@ -17,10 +17,10 @@ extends Player {
         super(cy2);
         this.bx = minecraft;
         this.m = n2;
-        // Web/TeaVM builds use SkinStore's local texture. The legacy Mojang
-        // URL in Entity.bl takes priority over z in the renderer, so assigning
-        // it here can make the custom skin disappear on held-item/render passes.
-        this.bl = null;
+        if (ea2 != null && ea2.b != null && ea2.b.length() > 0) {
+            this.bl = "http://www.minecraft.net/skin/" + ea2.b + ".png";
+            System.out.println("Loading texture " + this.bl);
+        }
         this.name = ea2.b;
         this.z = net.minecraft.client.web.SkinStore.texturePath();   // свой скин или /mob/char.png
     }

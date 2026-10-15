@@ -30,10 +30,20 @@ import org.teavm.jso.JSObject;
 public final class WebEntryPoint {
 
     private static WebMinecraft minecraft;
+    private static int framesSinceFlush = 0;
+
+    /** Игра стартует, когда готовы и ресурсы, и сохранённые миры из IndexedDB. */
+    private static int pendingStart = 2;
+
+    private static void partReady() {
+        if (--pendingStart == 0) {
+            startGame();
+        }
+    }
 
     public static void main(String[] args) {
-        // Hydrate persistent world files before the world-select menu can inspect slots.
-        WorldStore.loadAll(() -> ResourcePreloader.preloadAll(WebEntryPoint::startGame));
+        WorldStore.restore(WebEntryPoint::partReady);
+        ResourcePreloader.preloadAll(WebEntryPoint::partReady);
     }
 
     private static void startGame() {
@@ -43,13 +53,11 @@ public final class WebEntryPoint {
             // fullscreen=false — обычный canvas фиксированного размера.
             minecraft = new WebMinecraft(854, 480, false);
             minecraft.init();
-            WorldStore.installPageLifecycleSave(() -> {
-                if (minecraft != null) minecraft.saveWorldForBrowserExit();
-            });
         } catch (Throwable t) {
             showCrash("Failed to start game", t);
             return;
         }
+        WorldStore.installExitHook(() -> { if (minecraft != null) minecraft.saveWorldNow(); });
         hideLoadingScreen();
         requestFrame(WebEntryPoint::frame);
     }
@@ -57,6 +65,10 @@ public final class WebEntryPoint {
     private static void frame(double timestampMs) {
         try {
             minecraft.runOneFrame();
+            if (++framesSinceFlush >= 300) {   // примерно раз в 5-10 секунд пишем накопленные изменения мира
+                framesSinceFlush = 0;
+                WorldStore.flush();
+            }
         } catch (Throwable t) {
             showCrash("Unexpected error in game loop", t);
             return;

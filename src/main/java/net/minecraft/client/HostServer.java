@@ -392,7 +392,13 @@ public final class HostServer implements jv {
         e.takesDamage = true;
         double[] spot = findSpawnSpot(w, host);
         Saved back = saved.get(name.toLowerCase());
-        if (back != null && back.y > 1 && back.y < 126) spot = new double[]{back.x, back.y, back.z};
+        if (back != null && back.y > 1 && back.y < 126) {
+            // сохранённое место годится, только если там всё ещё можно стоять (мир мог измениться)
+            w.c((int)Math.floor(back.x) >> 4, (int)Math.floor(back.z) >> 4);
+            if (SpawnUtil.isSafe(w, (int)Math.floor(back.x), (int)Math.floor(back.y), (int)Math.floor(back.z))) {
+                spot = new double[]{back.x, back.y, back.z};
+            }
+        }
         double fx = spot[0], fy = spot[1], fz = spot[2];
         e.b(fx, fy, fz, host.aC, host.aD);
         w.a((lw)e);
@@ -463,12 +469,26 @@ public final class HostServer implements jv {
         int[][] offs = {{2, 0}, {-2, 0}, {0, 2}, {0, -2}, {2, 2}, {-2, -2}, {2, -2}, {-2, 2}, {3, 0}, {-3, 0}, {0, 3}, {0, -3}};
         for (int[] o : offs) {
             int x = hx + o[0], z = hz + o[1];
+            w.c(x >> 4, z >> 4);
             for (int dy = 2; dy >= -2; dy--) {
                 int y = hy + dy;
-                if (y < 1 || y > 120) continue;
-                if (w.a(x, y, z) == 0 && w.a(x, y + 1, z) == 0 && w.a(x, y - 1, z) > 0) {
+                if (SpawnUtil.isSafe(w, x, y, z)) {
                     return new double[]{x + 0.5, y, z + 0.5};
                 }
+            }
+        }
+        // твёрдого пола рядом нет (хост плывёт или летит) — свободная ячейка рядом на высоте хоста
+        for (int[] o : offs) {
+            int x = hx + o[0], z = hz + o[1];
+            if (hy >= 1 && hy <= 124 && SpawnUtil.passable(w.a(x, hy, z)) && SpawnUtil.passable(w.a(x, hy + 1, z))
+                && w.a(x, hy, z) != 10 && w.a(x, hy, z) != 11 && w.a(x, hy, z) != 51) {
+                return new double[]{x + 0.5, hy, z + 0.5};
+            }
+        }
+        // совсем некуда — поднимаемся над хостом до первого свободного места в его колонке
+        for (int y = Math.max(hy, 1); y <= 124; y++) {
+            if (SpawnUtil.clear(w.a(hx, y, hz)) && SpawnUtil.clear(w.a(hx, y + 1, hz))) {
+                return new double[]{host.aw, y, host.ay};
             }
         }
         return new double[]{host.aw, host.aG.b + 1.0, host.ay};
@@ -721,8 +741,8 @@ public final class HostServer implements jv {
         e.bl = null;
         e.takesDamage = true;
         e.an = id;
-        double x = w.m + 0.5, z = w.o + 0.5;
-        double y = w.n;
+        double[] rs = SpawnUtil.surfaceSpot(w, w.m, w.o, w.n);   // w.n не всегда совпадает с рельефом — ищем настоящую поверхность
+        double x = rs[0], y = rs[1], z = rs[2];
         e.b(x, y, z, 0f, 0f);
         w.a((lw)e);
         g.entity = e;

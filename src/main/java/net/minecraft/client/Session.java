@@ -2,8 +2,6 @@
  * Decompiled with CFR 0.152.
  */
 package net.minecraft.client;
-
-import net.minecraft.client.web.WorldStore;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
@@ -61,19 +59,6 @@ implements pk {
     public boolean z = false;
 
     public static NBTCompoundTag a(File file, String string) {
-        // Browser saves are read from IndexedDB first: TeaVM's java.io filesystem
-        // is volatile and can be empty after a page reload.
-        if (WorldStore.isEnabled()) {
-            String saved = WorldStore.get(WorldStore.levelKey(string));
-            if (saved != null) {
-                try {
-                    return ab.a(WorldStore.decode(saved)).getCompoundTag("Data");
-                } catch (Exception exception) {
-                    System.err.println("Could not read persistent level.dat for " + string);
-                    exception.printStackTrace();
-                }
-            }
-        }
         File file2 = new File(file, "saves");
         File file3 = new File(file2, string);
         if (!file3.exists()) {
@@ -83,7 +68,8 @@ implements pk {
         if (file4.exists()) {
             try {
                 NBTCompoundTag iq2 = ab.a(new FileInputStream(file4));
-                return iq2.getCompoundTag("Data");
+                NBTCompoundTag iq3 = iq2.getCompoundTag("Data");
+                return iq3;
             }
             catch (Exception exception) {
                 exception.printStackTrace();
@@ -93,15 +79,12 @@ implements pk {
     }
 
     public static void b(File file, String string) {
-        // Remove the IndexedDB copies even when no physical world directory exists.
-        if (WorldStore.isEnabled()) {
-            WorldStore.removePrefix("world/" + string + "/");
-        }
         File file2 = new File(file, "saves");
         File file3 = new File(file2, string);
         if (!file3.exists()) {
             return;
         }
+        net.minecraft.client.web.WorldStore.deletedTree(file3);   // убрать мир и из IndexedDB
         Session.a(file3.listFiles());
         file3.delete();
     }
@@ -181,13 +164,10 @@ implements pk {
         }
         object2 = new oz();
         object = new File(this.t, "level.dat");
-        String persistentLevelData = WorldStore.isEnabled() ? WorldStore.get(WorldStore.levelKey(string)) : null;
-        boolean bl2 = this.p = persistentLevelData == null && !((File)object).exists();
-        if (persistentLevelData != null || ((File)object).exists()) {
+        boolean bl2 = this.p = !((File)object).exists();
+        if (((File)object).exists()) {
             try {
-                NBTCompoundTag iq2 = persistentLevelData != null
-                    ? ab.a(WorldStore.decode(persistentLevelData))
-                    : ab.a(new FileInputStream((File)object));
+                NBTCompoundTag iq2 = ab.a(new FileInputStream((File)object));
                 NBTCompoundTag iq3 = iq2.getCompoundTag("Data");
                 this.u = iq3.getLong("RandomSeed");
                 this.m = iq3.getInt("SpawnX");
@@ -307,10 +287,6 @@ implements pk {
         iq2 = new NBTCompoundTag();
         iq2.storeTag("Data", (NBTTag)iq3);
         try {
-            // Persist the exact same gzipped NBT payload used by level.dat.
-            if (WorldStore.isEnabled()) {
-                WorldStore.put(WorldStore.levelKey(this.w), WorldStore.encode(ab.a(iq2)));
-            }
             File file = new File(this.t, "level.dat_new");
             File file2 = new File(this.t, "level.dat_old");
             File file3 = new File(this.t, "level.dat");
@@ -326,6 +302,7 @@ implements pk {
             if (file.exists()) {
                 file.delete();
             }
+            net.minecraft.client.web.WorldStore.changed(file3);   // зеркало в IndexedDB
         }
         catch (Exception exception) {
             exception.printStackTrace();

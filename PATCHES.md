@@ -3,6 +3,37 @@
 Каждое изменение здесь — осознанное и обосновано ниже. Цель: минимальные,
 точечные, легко проверяемые правки — НЕ переписывание игровой логики.
 
+## СОХРАНЕНИЕ МИРОВ МЕЖДУ ПЕРЕЗАГРУЗКАМИ ВКЛАДКИ
+
+`java.io.File` в TeaVM — это виртуальная ФС в памяти, поэтому `saves/` пропадала при обновлении страницы.
+Теперь она зеркалится в IndexedDB (`webcraft-worlds`, хранилище `files`):
+
+* `web/extras.js` — `window.WorldDB` (load / put / remove / removePrefix / commit, одна транзакция на пачку);
+  на `pagehide` и при скрытии вкладки вызывает `window.__javaWorldSave`.
+* `web/WorldStore.java` — `restore()` выкладывает файлы обратно в `saves/` ДО создания игры
+  (`WebEntryPoint`: игра стартует, когда готовы и ресурсы, и миры); `changed(File)` / `deletedTree(File)` /
+  `flush()`. `session.lock` и временные файлы (`tmp_chunk.dat`, `level.dat_new/_old`) не сохраняются.
+* Хуки: `mu.java` (после записи файла чанка), `Session.p()` (после записи `level.dat`),
+  `Session.b(File,String)` (удаление мира). `Minecraft.saveWorldNow()` — полное сохранение + flush на уходе
+  со страницы; по таймеру `flush()` вызывается раз в ~300 кадров из `WebEntryPoint.frame`.
+* Мир гостя (`Session.z`) не пишется. Инвентарь гостей хоста по-прежнему хранится только в памяти хоста.
+* Тест: `tools/mp-test/.../web/WorldStoreTest.java` (сохранение -> «перезагрузка» -> блок, сид и level.dat на месте).
+
+## МУЛЬТИПЛЕЕР: СКИН СБРАСЫВАЛСЯ НА СТАНДАРТНЫЙ ПРИ ВЗЯТИИ ПРЕДМЕТА
+
+`HostServer.syncPlayerLooks` при смене предмета в руке удаляет и заново создаёт сущность игрока (в протоколе
+Alpha предмет передаётся только при появлении). Клиент создавал новый `ps` со скином `/mob/char.png`, а пакет
+скина больше не приходил. Теперь `SkinStore` помнит последний скин каждой чужой сущности (`known(id)`),
+`ib.a(hs)` применяет его к новой сущности; память очищается при входе в новую сессию.
+
+## МУЛЬТИПЛЕЕР: КЛИЕНТ ПОЯВЛЯЛСЯ ПОД ЗЕМЛЁЙ
+
+Y мирового спавна `Session.n` для новых миров равен 64 и не совпадает с рельефом; возрождение гостя ставило
+его ровно в `w.n` (внутрь земли). Новый `SpawnUtil` ищет реальную поверхность; через него идут возрождение,
+выбор места рядом с хостом (`findSpawnSpot`: не вода/лава, есть твёрдый пол и 2 свободных блока) и проверка
+сохранённой позиции вернувшегося игрока. Страховка на клиенте (`ib.a(fa)`): если позиция от сервера оказалась
+внутри блоков при загруженном чанке, игрок поднимается до свободного места.
+
 ## ПРОИЗВОДИТЕЛЬНОСТЬ (фризы/лаги) — визуал не менялся
 
 Все правки только в GL-шиме (`org.lwjgl.opengl.*`, `net.minecraft.client.web.*`) и `pom.xml`;
@@ -621,22 +652,3 @@ getResource-связанные), все обнаружены третьим CI-�
 * **Cactus damage for guests:** because remote-player movement is client-driven, the host now checks the guest's occupied block volume for Alpha cactus (block ID 81) and applies one point of damage with a short cooldown.
 
 Build note: Maven is not installed in this environment, so a full TeaVM build could not be run here.
-
-
-## SKIN AND GRASS COLOR FOLLOW-UP (2026-10-14)
-
-* **Local skin persistence during item/render changes:** `bq` no longer assigns the obsolete `http://www.minecraft.net/skin/<name>.png` URL to `bl`. In the renderer that URL takes precedence over the local `SkinStore` path and could make the custom skin appear to reset. `Minecraft.applySkinNow` also clears `bl` before switching `z` to the selected local/default texture.
-* **Biome sampling dimensions:** `po` now passes both requested dimensions (`n4`, `n5`) to all five climate-noise samples. Previously rectangular requests incorrectly sampled `n4 × n4`, which could produce incorrect/reused climate values.
-* **Biome tint on grass-block sides:** instead of tinting the entire dirt side texture, `ResourceCache` creates an alpha mask from the green pixels of terrain tile 3 in unused atlas tile 255. `bk` draws this mask over the side with the biome tint; dirt remains its normal brown and snowy sides are left untouched. 256×256 texture-pack atlases receive the same treatment.
-* **Regression test:** `GrassTintTest` verifies that grass pixels become opaque in the generated mask while dirt pixels stay transparent and the source dirt texture is not changed.
-
-Verification for this follow-up: `sh tools/mp-test/run.sh` passed (`PktTest`, `GrassTintTest`, and `MpIntegration`, ending in `INTEGRATION OK`). This is JVM-side validation; an actual browser render/TeaVM package build was not run in this environment.
-
-## Browser world persistence (IndexedDB)
-
-- Added `WorldStore`, which hydrates world save entries before the world selection screen opens and batches writes to IndexedDB. `localStorage` is retained only as a fallback when IndexedDB is unavailable.
-- Gzipped NBT chunks are stored by world directory and chunk coordinates; `level.dat` is stored separately so world slots, seed, time, spawn, and the saved player NBT survive a reload. Nether chunks use the `DIM-1` directory in their keys.
-- World deletion removes persistent records even when TeaVM's volatile filesystem no longer contains the world directory.
-- Added a page-exit save hook that saves the current world and flushes queued writes before a reload/navigation. Normal periodic world saving continues to use the existing Minecraft save interval.
-- Added a JVM regression test for the Base64 byte codec and persistent chunk key conventions.
-
